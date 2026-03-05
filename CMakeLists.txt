@@ -3,7 +3,39 @@ project(hft LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(Protobuf REQUIRED)
+find_package(absl QUIET)
+
+set(PROTO_FILE ${CMAKE_SOURCE_DIR}/proto/market_data.proto)
+set(GEN_DIR ${CMAKE_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${GEN_DIR})
+
+add_custom_command(
+  OUTPUT ${GEN_DIR}/market_data.pb.cc ${GEN_DIR}/market_data.pb.h
+  COMMAND protobuf::protoc
+  ARGS --cpp_out=${GEN_DIR} -I ${CMAKE_SOURCE_DIR}/proto ${PROTO_FILE}
+  DEPENDS ${PROTO_FILE}
+)
+
+add_library(hft_proto ${GEN_DIR}/market_data.pb.cc)
+target_include_directories(hft_proto PUBLIC ${GEN_DIR})
+target_link_libraries(hft_proto PUBLIC protobuf::libprotobuf)
+
+set(RUST_LIB ${CMAKE_SOURCE_DIR}/strategy_engine/target/release/libstrategy_engine.a)
+add_custom_target(strategy_engine_build
+  COMMAND cargo build --release
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/strategy_engine
+)
+
 add_executable(hft src/main.cpp)
+add_dependencies(hft strategy_engine_build)
+target_include_directories(hft PRIVATE ${GEN_DIR})
+target_link_libraries(hft PRIVATE hft_proto ${RUST_LIB} protobuf::libprotobuf)
+if(absl_FOUND)
+  target_link_libraries(hft PRIVATE absl::log_internal_check_op)
+else()
+  target_link_libraries(hft PRIVATE absl_log_internal_check_op)
+endif()
  
 option(HFT_ENABLE_WARNINGS "Enable strict compile warnings" ON)
 
@@ -33,6 +65,3 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		add_link_options(-fsanitize=thread)
 	endif()
 endif()
-
-
-
