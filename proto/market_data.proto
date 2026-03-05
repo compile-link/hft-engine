@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package hft;
+
+message TopOfBook {
+  string symbol = 1;
+  double bid_px = 2;
+  double bid_qty = 3;
+  double ask_px = 4;
+  double ask_qty = 5;
+  uint64 exchange_ts_ns = 6;
+  uint64 recv_ts_ns = 7;
+  uint64 sequence = 8;
+}
+
+enum QuoteAction {
+  QUOTE_ACTION_UNSPECIFIED = 0;
+  HOLD = 1;
+  QUOTE_BID = 2;
+  QUOTE_ASK = 3;
+  QUOTE_BOTH = 4;
+  CANCEL_ALL = 5;
+}
+
+message StrategySignal {
+  string symbol = 1;
+  QuoteAction action = 2;
+  string reason = 3;
+  uint64 ts_ns = 4;
+}
