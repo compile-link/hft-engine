@@ -2,3 +2,5 @@
 .vscode/
 *.o
 compile_commands.json
+/strategy_engine/target
+/strategy_engine/Cargo.lock
