@@ -27,9 +27,17 @@ add_custom_target(strategy_engine_build
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/strategy_engine
 )
 
-add_executable(hft src/main.cpp)
+add_executable(hft
+  src/main.cpp
+  src/source_factory.cpp
+  src/replay_source.cpp
+  src/live_websocket_source.cpp
+)
 add_dependencies(hft strategy_engine_build)
-target_include_directories(hft PRIVATE ${GEN_DIR})
+target_include_directories(hft PRIVATE
+  ${CMAKE_SOURCE_DIR}/include
+  ${GEN_DIR}
+)
 target_link_libraries(hft PRIVATE hft_proto ${RUST_LIB} protobuf::libprotobuf)
 if(absl_FOUND)
   target_link_libraries(hft PRIVATE absl::log_internal_check_op)
