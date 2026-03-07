@@ -16,10 +16,8 @@ message TopOfBook {
 enum QuoteAction {
   QUOTE_ACTION_UNSPECIFIED = 0;
   HOLD = 1;
-  QUOTE_BID = 2;
-  QUOTE_ASK = 3;
-  QUOTE_BOTH = 4;
-  CANCEL_ALL = 5;
+  QUOTE_BOTH = 2;
+  CANCEL_ALL = 3;
 }
 
 message StrategySignal {

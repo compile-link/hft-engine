@@ -24,8 +24,6 @@ pub extern "C" fn rust_decide(top_ptr: *const u8, top_len: usize) -> i32 {
 
     if spread >= 1.0 {
         pb::QuoteAction::QuoteBoth as i32
-    } else if spread >= 0.5 {
-        pb::QuoteAction::QuoteBid as i32
     } else {
         pb::QuoteAction::Hold as i32
     }
