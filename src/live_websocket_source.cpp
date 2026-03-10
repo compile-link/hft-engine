@@ -16,6 +16,8 @@ LiveWebSocketSource::~LiveWebSocketSource() {
 
 bool LiveWebSocketSource::next(hft::TopOfBook& out) {
     while (true) {
+        report_with_interval();
+
         if (!curl_ && (!connect() || !subscribe())) {
             reconnect_with_backoff();
             continue;
@@ -147,4 +149,34 @@ void LiveWebSocketSource::close() {
         curl_easy_cleanup(curl_);
         curl_ = nullptr;
     }
+}
+
+void LiveWebSocketSource::report_with_interval() {
+    static constexpr auto report_period = std::chrono::seconds(5);
+    const auto now = std::chrono::steady_clock::now();
+
+    if (now - last_report_time_ < std::chrono::seconds(report_period)) {
+        return;
+    }
+
+    const auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_report_time_).count();
+    const uint64_t recv_delta = stats_.recv - last_report_stats_.recv;
+    const uint64_t ok_delta = stats_.parse_ok - last_report_stats_.parse_ok;
+    const uint64_t err_delta = stats_.parse_err - last_report_stats_.parse_err;
+    const uint64_t reconn_delta = stats_.reconnects - last_report_stats_.reconnects;
+
+    std::cerr << "diagnostics\n"
+              << "dt_ms = " << dt_ms << "\n"
+              << "recv = " << stats_.recv << "\n"
+              << "recv_rate[msg/s] = " << (dt_ms > 0 ? (recv_delta * 1000 / dt_ms) : 0) << "\n"
+              << "parse_ok=" << stats_.parse_ok << "\n"
+              << "d_parse_ok=" << ok_delta << "\n"
+              << "parse_err=" << stats_.parse_err << "\n"
+              << "d_parse_err=" << err_delta << "\n"
+              << "reconn=" << stats_.reconnects << "\n"
+              << "d_reconn=" << reconn_delta << "\n"
+              << "\n";
+
+    last_report_time_ = now;
+    last_report_stats_ = stats_;
 }

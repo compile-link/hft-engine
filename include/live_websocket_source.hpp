@@ -27,6 +27,7 @@ class LiveWebSocketSource : public MarketDataSource {
     bool parse_to_tob(const std::string& msg, hft::TopOfBook& out);
     void reconnect_with_backoff();
     void close();
+    void report_with_interval();
 
     static constexpr const char* k_btcusdt = "btcusdt";
     static constexpr const char* k_dashbtc = "dashbtc";
@@ -38,5 +39,7 @@ class LiveWebSocketSource : public MarketDataSource {
     CURL* curl_ = nullptr;
     uint64_t seq_ = 0;
     std::chrono::milliseconds backoff_ms_{1000};
-    Stats stats_;
+    Stats stats_{};
+    Stats last_report_stats_{};
+    std::chrono::steady_clock::time_point last_report_time_ = std::chrono::steady_clock::now();
 };
