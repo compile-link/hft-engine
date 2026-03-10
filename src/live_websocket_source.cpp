@@ -15,7 +15,6 @@ LiveWebSocketSource::~LiveWebSocketSource() {
 }
 
 bool LiveWebSocketSource::next(hft::TopOfBook& out) {
-    std::cout << "LWSS->next(tob)\n";
     while (true) {
         if (!curl_ && (!connect() || !subscribe())) {
             reconnect_with_backoff();
@@ -27,11 +26,14 @@ bool LiveWebSocketSource::next(hft::TopOfBook& out) {
             reconnect_with_backoff();
             continue;
         }
+        stats_.recv++;
 
         if (!parse_to_tob(msg, out)) {
             std::cerr << "[live] parse error\n";
+            stats_.parse_err++;
             continue;
         }
+        stats_.parse_ok++;
 
         backoff_ms_ = std::chrono::milliseconds(1000);
         return true;
@@ -63,22 +65,30 @@ bool LiveWebSocketSource::subscribe() {
 bool LiveWebSocketSource::read_message(std::string& msg) {
     msg.clear();
     char buf[8192];
-    size_t nrecv = 0;
-    const struct curl_ws_frame* meta = nullptr;
+    while (true) {
+        size_t nrecv = 0;
+        const struct curl_ws_frame* meta = nullptr;
 
-    const CURLcode rc = curl_ws_recv(curl_, buf, sizeof(buf), &nrecv, &meta); // Receive WebSocket frame
-    if (rc != CURLE_OK) {
-        return false;
-    }
-    if (meta && (meta->flags & CURLWS_CLOSE)) {
-        return false;
-    }
-    if (meta && (meta->flags & CURLWS_PING)) {
-        return true;
-    }
+        const CURLcode rc = curl_ws_recv(curl_, buf, sizeof(buf), &nrecv, &meta); // Receive WebSocket frame
+        if (rc == CURLE_AGAIN) {
+            // no data yet, wait
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        if (rc != CURLE_OK) {
+            return false;
+        }
+        if (meta && (meta->flags & CURLWS_CLOSE)) {
+            return false;
+        }
+        if (meta && (meta->flags & CURLWS_PING)) {
+            // Ignore ping frames
+            continue;
+        }
 
-    msg.assign(buf, nrecv);
-    return !msg.empty();
+        msg.assign(buf, nrecv);
+        return !msg.empty();
+    }
 }
 
 namespace {
@@ -121,7 +131,9 @@ bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& o
         return false;
     }
 }
+
 void LiveWebSocketSource::reconnect_with_backoff() {
+    stats_.reconnects++;
     if (curl_) {
         curl_easy_cleanup(curl_);
         curl_ = nullptr;

@@ -21,8 +21,11 @@ pub extern "C" fn rust_decide(top_ptr: *const u8, top_len: usize) -> i32 {
     }
 
     let spread = msg.ask_px - msg.bid_px;
+    let threshold = 0.0000007;
+    // let threshold = 0.1;
+    // let threshold = 1.0;
 
-    if spread >= 1.0 {
+    if spread >= threshold {
         pb::QuoteAction::QuoteBoth as i32
     } else {
         pb::QuoteAction::Hold as i32

@@ -26,20 +26,26 @@ int main(int argc, char* argv[]) {
     int exit_code = 0;
     try {
         std::string source = "replay"; // Default
-                                       //
+        std::string symbol = "btcusdt"; // Default
+
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             if (arg == "--source" && i + 1 < argc) {
                 source = argv[++i];
             }
+            if (arg == "--symbol" && i + 1 < argc) {
+                symbol = argv[++i];
+            }
         }
 
         std::unique_ptr<MarketDataSource> mds;
         if (source == "replay") {
             mds = utils::make_source(utils::SourceType::Replay);
+            std::cout << "Replay mode\n";
         } else if (source == "live") {
-            mds = utils::make_source(utils::SourceType::Live);
+            mds = utils::make_source(utils::SourceType::Live, symbol);
+            std::cout << "Live mode\n";
         }
 
         if (!mds) {

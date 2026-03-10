@@ -4,12 +4,12 @@
 
 namespace utils {
 
-    std::unique_ptr<MarketDataSource> make_source(SourceType st) {
+    std::unique_ptr<MarketDataSource> make_source(SourceType st, std::string symbol) {
         std::unique_ptr<MarketDataSource> source;
         if (st == SourceType::Replay) {
             source = std::make_unique<ReplaySource>();
         } else if (st == SourceType::Live) {
-            source = std::make_unique<LiveWebSocketSource>();
+            source = std::make_unique<LiveWebSocketSource>(symbol);
         }
         return source;
     }

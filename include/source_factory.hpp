@@ -7,5 +7,5 @@
 namespace utils {
     enum class SourceType { Replay,
                             Live };
-    std::unique_ptr<MarketDataSource> make_source(SourceType st);
+    std::unique_ptr<MarketDataSource> make_source(SourceType st, std::string symbol = "");
 } // namespace utils
