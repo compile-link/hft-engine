@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Protobuf REQUIRED)
 find_package(absl QUIET)
+find_package(CURL REQUIRED)
 
 set(PROTO_FILE ${CMAKE_SOURCE_DIR}/proto/market_data.proto)
 set(GEN_DIR ${CMAKE_BINARY_DIR}/generated)
@@ -38,7 +39,7 @@ target_include_directories(hft PRIVATE
   ${CMAKE_SOURCE_DIR}/include
   ${GEN_DIR}
 )
-target_link_libraries(hft PRIVATE hft_proto ${RUST_LIB} protobuf::libprotobuf)
+target_link_libraries(hft PRIVATE hft_proto ${RUST_LIB} protobuf::libprotobuf CURL::libcurl)
 if(absl_FOUND)
   target_link_libraries(hft PRIVATE absl::log_internal_check_op)
 else()
