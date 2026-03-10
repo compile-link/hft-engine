@@ -1,9 +1,11 @@
 #include "live_websocket_source.hpp"
+#include <chrono>
+#include <nlohmann/json.hpp>
 #include <thread>
 
 LiveWebSocketSource::LiveWebSocketSource(std::string symbol) : symbol_(std::move(symbol)),
                                                                // Individual Symbol Book Ticker Stream
-                                                               url_("wss://stream.binance.com:9443/ws/" + symbol_ + "@bookTicker") {
+                                                               url_(k_binance_ws_base_endpoint + symbol_ + k_stream) {
     curl_global_init(CURL_GLOBAL_DEFAULT); // Initialize libcurl globally
 }
 
@@ -13,6 +15,7 @@ LiveWebSocketSource::~LiveWebSocketSource() {
 }
 
 bool LiveWebSocketSource::next(hft::TopOfBook& out) {
+    std::cout << "LWSS->next(tob)\n";
     while (true) {
         if (!curl_ && (!connect() || !subscribe())) {
             reconnect_with_backoff();
@@ -78,25 +81,45 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
     return !msg.empty();
 }
 
+namespace {
+    uint64_t now_ns() {
+        using namespace std::chrono;
+        return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+} // namespace
+
 bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& out) {
-    // JSON parser / mapping
-    // Stream Name: <symbol>@bookTicker
+    using nlohmann::json;
+    json j;
+    try {
+        j = json::parse(msg);
 
-    // Update Speed: Real-time
+        const std::string symbol = j.at("s").get<std::string>();        // symbol
+        const double bid_px = std::stod(j.at("b").get<std::string>());  // best bid price
+        const double bid_qty = std::stod(j.at("B").get<std::string>()); // best bid qty
+        const double ask_px = std::stod(j.at("a").get<std::string>());  // best ask price
+        const double ask_qty = std::stod(j.at("A").get<std::string>()); // best ask qty
+        const uint64_t update_id = j.at("u").get<uint64_t>();           // order book updateId
 
-    // Payload:
+        // Validate against corrupted data
+        if (bid_px <= 0.0 || ask_px <= 0.0 || ask_px < bid_px) {
+            return false;
+        }
 
-    // {
-    //     "u": 400900217,         // order book updateId
-    //     "s": "BNBUSDT",         // symbol
-    //     "b": "25.35190000",     // best bid price
-    //     "B": "31.21000000",     // best bid qty
-    //     "a": "25.36520000",     // best ask price
-    //     "A": "40.66000000"      // best ask qty
-    // }
-    (void)msg;
-    (void)out;
-    return false;
+        out.set_symbol(symbol);
+        out.set_bid_px(bid_px);
+        out.set_bid_qty(bid_qty);
+        out.set_ask_px(ask_px);
+        out.set_ask_qty(ask_qty);
+        out.set_exchange_ts_ns(0);
+        out.set_recv_ts_ns(now_ns());
+        out.set_sequence(update_id);
+
+        return true;
+
+    } catch (...) {
+        return false;
+    }
 }
 void LiveWebSocketSource::reconnect_with_backoff() {
     if (curl_) {

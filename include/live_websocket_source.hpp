@@ -22,6 +22,8 @@ class LiveWebSocketSource : public MarketDataSource {
     void close();
 
     static constexpr const char* k_default_symbol = "BTCUSDT";
+    static constexpr const char* k_binance_ws_base_endpoint = "wss://stream.binance.com:9443/ws/";
+    static constexpr const char* k_stream = "@bookTicker";
     std::string symbol_;
     std::string url_;
     CURL* curl_ = nullptr;
