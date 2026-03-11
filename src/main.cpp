@@ -9,6 +9,7 @@
 #include <thread>
 
 extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
+extern "C" void rust_set_threshold(double thres);
 
 static const char* action_to_str(int32_t a) {
     switch (a) {
@@ -28,8 +29,8 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        std::string source = "replay";  // Default
-        std::string symbol = "btcusdt"; // Default
+        std::string source = "live";
+        std::string symbol = "dashbtc";
 
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
@@ -39,6 +40,9 @@ int main(int argc, char* argv[]) {
             }
             if (arg == "--symbol" && i + 1 < argc) {
                 symbol = argv[++i];
+            }
+            if (arg == "--threshold" && i + 1 < argc) {
+                rust_set_threshold(std::stod(argv[++i]));
             }
         }
 

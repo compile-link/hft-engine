@@ -165,7 +165,7 @@ void LiveWebSocketSource::report_with_interval() {
     const uint64_t err_delta = stats_.parse_err - last_report_stats_.parse_err;
     const uint64_t reconn_delta = stats_.reconnects - last_report_stats_.reconnects;
 
-    std::cerr << "diagnostics\n"
+    std::cerr << "\ndiagnostics\n"
               << "dt_ms = " << dt_ms << "\n"
               << "recv = " << stats_.recv << "\n"
               << "recv_rate[msg/s] = " << (dt_ms > 0 ? (recv_delta * 1000 / dt_ms) : 0) << "\n"

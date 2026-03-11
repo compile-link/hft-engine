@@ -1,7 +1,21 @@
 use prost::Message;
+use std::sync::OnceLock;
 
 pub mod pb {
     include!(concat!(env!("OUT_DIR"), "/hft.rs"));
+}
+
+static THRESHOLD: OnceLock<f64> = OnceLock::new();
+
+#[no_mangle]
+pub extern "C" fn rust_set_threshold(v: f64) {
+    if v.is_finite() && v > 0.0 {
+        let _ = THRESHOLD.set(v);
+    }
+}
+
+fn get_threshold() -> f64 {
+    *THRESHOLD.get().unwrap_or(&0.0000007)
 }
 
 #[no_mangle]
@@ -21,9 +35,7 @@ pub extern "C" fn rust_decide(top_ptr: *const u8, top_len: usize) -> i32 {
     }
 
     let spread = msg.ask_px - msg.bid_px;
-    let threshold = 0.0000007;
-    // let threshold = 0.1;
-    // let threshold = 1.0;
+    let threshold = get_threshold();
 
     if spread >= threshold {
         pb::QuoteAction::QuoteBoth as i32
