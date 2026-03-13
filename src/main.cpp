@@ -2,6 +2,7 @@
 #include "source_factory.hpp"
 #include "tob_ring_buffer.hpp"
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -22,6 +23,11 @@ static const char* action_to_str(int32_t a) {
     default:
         return "UNSPECIFIED";
     }
+}
+
+static uint64_t now_ns() {
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
 int main(int argc, char* argv[]) {
@@ -91,7 +97,17 @@ int main(int argc, char* argv[]) {
                 int32_t action = rust_decide(
                     reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
 
-                std::cout << "Strategy action: " << action_to_str(action) << " (" << action << ")\n";
+                hft::StrategySignal sig;
+                sig.set_symbol(tob.symbol());
+                sig.set_action(static_cast<hft::QuoteAction>(action));
+                sig.set_reason("spread condition");
+                sig.set_ts_ns(now_ns());
+
+                std::cout << "Signal:\n"
+                          << "symbol = " << sig.symbol() << "\n"
+                          << "action = " << action_to_str(action) << "\n"
+                          << "reason = " << sig.reason() << "\n"
+                          << "ts_ns = " << sig.ts_ns() << "\n\n";
             }
         });
 
