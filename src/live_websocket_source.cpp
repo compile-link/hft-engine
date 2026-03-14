@@ -1,6 +1,9 @@
 #include "live_websocket_source.hpp"
+#include "log_utils.hpp"
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <ostream>
+#include <sstream>
 #include <thread>
 
 LiveWebSocketSource::LiveWebSocketSource(std::string symbol) : symbol_(std::move(symbol)),
@@ -31,7 +34,7 @@ bool LiveWebSocketSource::next(hft::TopOfBook& out) {
         stats_.recv++;
 
         if (!parse_to_tob(msg, out)) {
-            std::cerr << "[live] parse error\n";
+            log_utils::log_to_stream(std::cerr, "[live] parse error");
             stats_.parse_err++;
             continue;
         }
@@ -93,13 +96,6 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
     }
 }
 
-namespace {
-    uint64_t now_ns() {
-        using namespace std::chrono;
-        return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-    }
-} // namespace
-
 bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& out) {
     using nlohmann::json;
     json j;
@@ -124,7 +120,7 @@ bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& o
         out.set_ask_px(ask_px);
         out.set_ask_qty(ask_qty);
         out.set_exchange_ts_ns(0);
-        out.set_recv_ts_ns(now_ns());
+        out.set_recv_ts_ns(log_utils::now_ns());
         out.set_sequence(update_id);
 
         return true;
@@ -155,7 +151,7 @@ void LiveWebSocketSource::report_with_interval() {
     static constexpr auto report_period = std::chrono::seconds(5);
     const auto now = std::chrono::steady_clock::now();
 
-    if (now - last_report_time_ < std::chrono::seconds(report_period)) {
+    if (now - last_report_time_ < report_period) {
         return;
     }
 
@@ -164,18 +160,18 @@ void LiveWebSocketSource::report_with_interval() {
     const uint64_t ok_delta = stats_.parse_ok - last_report_stats_.parse_ok;
     const uint64_t err_delta = stats_.parse_err - last_report_stats_.parse_err;
     const uint64_t reconn_delta = stats_.reconnects - last_report_stats_.reconnects;
-
-    std::cerr << "\ndiagnostics\n"
-              << "dt_ms = " << dt_ms << "\n"
-              << "recv = " << stats_.recv << "\n"
-              << "recv_rate[msg/s] = " << (dt_ms > 0 ? (recv_delta * 1000 / dt_ms) : 0) << "\n"
-              << "parse_ok=" << stats_.parse_ok << "\n"
-              << "d_parse_ok=" << ok_delta << "\n"
-              << "parse_err=" << stats_.parse_err << "\n"
-              << "d_parse_err=" << err_delta << "\n"
-              << "reconn=" << stats_.reconnects << "\n"
-              << "d_reconn=" << reconn_delta << "\n"
-              << "\n";
+    std::ostringstream oss;
+    oss << "Diagnostics:"
+        << " dt_ms=" << dt_ms
+        << " recv=" << stats_.recv
+        << " recv_rate[msg/s]=" << (dt_ms > 0 ? (recv_delta * 1000 / dt_ms) : 0)
+        << " parse_ok=" << stats_.parse_ok
+        << " d_parse_ok=" << ok_delta
+        << " parse_err=" << stats_.parse_err
+        << " d_parse_err=" << err_delta
+        << " reconn=" << stats_.reconnects
+        << " d_reconn=" << reconn_delta;
+    log_utils::log_to_stream(std::cerr, oss.str());
 
     last_report_time_ = now;
     last_report_stats_ = stats_;
