@@ -49,6 +49,18 @@ int main(int argc, char* argv[]) {
             if (arg == "--threshold" && i + 1 < argc) {
                 threshold = std::stod(argv[++i]);
             }
+            if (arg == "--help" || arg == "-h") {
+                std::ostringstream oss;
+                oss << "Usage: " << argv[0] << " [options]\n\n"
+                    << "Options:\n"
+                    << "  --source <live|replay>   Data feed [live]\n"
+                    << "  --symbol <symbol>        Symbol for live feed [dashbtc]\n"
+                    << "  --threshold <value>      Spread threshold (live:[0.0000007], replay:[1.0])\n"
+                    << "  --help, -h               Print this help";
+                log_utils::log_to_stream(std::cout, oss.str());
+                google::protobuf::ShutdownProtobufLibrary();
+                return 0;
+            }
         }
 
         bool log_all = false;
