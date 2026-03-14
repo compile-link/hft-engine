@@ -14,9 +14,10 @@ Low-latency market data processor with a C++ pipeline and Rust strategy module
 ## Sample Output
 ```
 Live mode
-Signal: symbol=DASHBTC action=QUOTE_BOTH reason=spread_cond ts_ns=221773480635174
-Diagnostics: dt_ms=10319 recv=7 recv_rate[msg/s]=0 parse_ok=7 d_parse_ok=7 parse_err=0 d_parse_err=0 reconn=0 d_reconn=0
-Signal: symbol=DASHBTC action=HOLD reason=spread_cond ts_ns=221782680397495
+Diagnostics: dt_ms=8972 recv=1 recv_rate[msg/s]=0 parse_ok=1 d_parse_ok=1 parse_err=0 d_parse_err=0 reconn=0 d_reconn=0
+Signal: symbol=DASHBTC action=HOLD reason=spread_cond ts_ns=231418184649719
+Latency: e2e_ns=58400 strat_ns=2800
+Signal: symbol=DASHBTC action=QUOTE_BOTH reason=spread_cond ts_ns=231423000418448
 ```
 
 ## Requirements
