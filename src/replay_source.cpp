@@ -1,4 +1,5 @@
 #include "replay_source.hpp"
+#include <thread>
 
 namespace {
     hft::TopOfBook make_tob(
@@ -29,13 +30,31 @@ namespace {
         make_tob("BTCUSDT", 100.50, 101.49, 1.1, 1.1, 1'000'600, 1'000'700, 4),
         make_tob("BTCUSDT", 100.75, 101.75, 0.8, 1.3, 1'000'800, 1'000'900, 5)};
 
+#ifdef HFT_PROFILE
+    static std::vector<hft::TopOfBook> k_ticks_expanded = [] {
+        std::vector<hft::TopOfBook> v;
+        v.reserve(k_mock_ticks.size() * 100);
+        for (int i = 0; i < 10; ++i) {
+            v.insert(v.end(), k_mock_ticks.begin(), k_mock_ticks.end());
+        }
+        return v;
+    }();
+#endif
 } // namespace
 
 bool ReplaySource::next(hft::TopOfBook& out) {
+#ifdef HFT_PROFILE
+    static auto k_mock_ticks = k_ticks_expanded;
+#endif
     if (idx_ >= k_mock_ticks.size()) {
         return false;
     }
 
     out = k_mock_ticks[idx_++];
+
+#ifdef HFT_PROFILE
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+#endif
+
     return true;
 }

@@ -75,3 +75,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		add_link_options(-fsanitize=thread)
 	endif()
 endif()
+
+option(HFT_PROFILE "Enable profiling helpers" OFF)
+if(HFT_PROFILE)
+    target_compile_definitions(hft PRIVATE HFT_PROFILE)
+endif()
