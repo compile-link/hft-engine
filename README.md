@@ -87,6 +87,7 @@ Single-producer/single-consumer ring buffer with fixed capacity (1024), drops fr
 ## Notes
 
 - Current scope uses individual symbol bookTicker stream (symbol can be set via CLI argument)
+- Replay default threshold = 1.0; live default = 0.0000007 (threshold can be set via CLI argument)
 - Received messages are parsed with nlohmann json parser library
 - Signal timestamp uses steady_clock (monotonic)
 - Latency metrics: e2e_ns = now - recv_ts_ns, strat_ns = rust_decide duration

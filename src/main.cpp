@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -34,6 +35,7 @@ int main(int argc, char* argv[]) {
     try {
         std::string source = "live";
         std::string symbol = "dashbtc";
+        std::optional<double> threshold = std::nullopt;
 
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
@@ -45,21 +47,33 @@ int main(int argc, char* argv[]) {
                 symbol = argv[++i];
             }
             if (arg == "--threshold" && i + 1 < argc) {
-                rust_set_threshold(std::stod(argv[++i]));
+                threshold = std::stod(argv[++i]);
             }
         }
 
+        bool log_all = false;
         std::unique_ptr<MarketDataSource> mds;
         if (source == "replay") {
             mds = utils::make_source(utils::SourceType::Replay);
             log_utils::log_to_stream(std::cout, "Replay mode");
+            if (!threshold) {
+                threshold = 1.0; // Default for replay stub
+            }
+            log_all = true;
         } else if (source == "live") {
             mds = utils::make_source(utils::SourceType::Live, symbol);
             log_utils::log_to_stream(std::cout, "Live mode");
+            if (!threshold) {
+                threshold = 0.0000007; // Default for live feed
+            }
         }
 
         if (!mds) {
             throw std::invalid_argument("Invalid source");
+        }
+
+        if (threshold) {
+            rust_set_threshold(*threshold);
         }
 
         std::atomic<bool> done{false};
@@ -104,7 +118,7 @@ int main(int argc, char* argv[]) {
                 sig.set_ts_ns(t1);
 
                 auto now = std::chrono::steady_clock::now();
-                if (now - last_log >= std::chrono::seconds(1)) { // Limit logging rate
+                if (now - last_log >= std::chrono::seconds(1) || log_all) { // Limit logging rate
                     std::ostringstream oss;
                     oss << "Signal:"
                         << " symbol=" << sig.symbol()
