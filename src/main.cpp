@@ -92,14 +92,16 @@ int main(int argc, char* argv[]) {
                 }
                 tob.SerializeToString(&payload);
 
+                auto t0 = log_utils::now_ns();
                 int32_t action = rust_decide(
                     reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
 
+                auto t1 = log_utils::now_ns();
                 hft::StrategySignal sig;
                 sig.set_symbol(tob.symbol());
                 sig.set_action(static_cast<hft::QuoteAction>(action));
                 sig.set_reason("spread_cond");
-                sig.set_ts_ns(log_utils::now_ns());
+                sig.set_ts_ns(t1);
 
                 auto now = std::chrono::steady_clock::now();
                 if (now - last_log >= std::chrono::seconds(1)) { // Limit logging rate
@@ -110,6 +112,14 @@ int main(int argc, char* argv[]) {
                         << " reason=" << sig.reason()
                         << " ts_ns=" << sig.ts_ns();
                     log_utils::log_to_stream(std::cout, oss.str());
+                    oss.str("");
+                    oss.clear();
+                    const auto recv_ns = tob.recv_ts_ns();
+                    const auto e2e_ns = (recv_ns > 0) ? (t1 - recv_ns) : 0;
+                    oss << "Latency:"
+                        << " e2e_ns=" << e2e_ns
+                        << " strat_ns=" << t1 - t0;
+                    log_utils::log_to_stream(std::cerr, oss.str());
                     last_log = now;
                 }
             }

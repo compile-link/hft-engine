@@ -8,6 +8,7 @@ Low-latency market data processor with a C++ pipeline and Rust strategy module
 - Multithreaded ingest and strategy pipeline using SPSC ring buffer
 - Rust strategy module accessed by FFI
 - Log system for StrategySignal (output) and diagnostics, rate-limited, synchronized across threads with mutex guard
+- Latency metrics (end-to-end and strategy compute time)
 
 
 ## Sample Output
@@ -87,4 +88,5 @@ Single-producer/single-consumer ring buffer with fixed capacity (1024), drops fr
 - Current scope uses individual symbol bookTicker stream (symbol can be set via CLI argument)
 - Received messages are parsed with nlohmann json parser library
 - Signal timestamp uses steady_clock (monotonic)
+- Latency metrics: e2e_ns = now - recv_ts_ns, strat_ns = rust_decide duration
 

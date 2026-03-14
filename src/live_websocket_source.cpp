@@ -124,7 +124,6 @@ bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& o
         out.set_sequence(update_id);
 
         return true;
-
     } catch (...) {
         return false;
     }
