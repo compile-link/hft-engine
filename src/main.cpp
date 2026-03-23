@@ -1,3 +1,4 @@
+#include "benchmark.hpp"
 #include "log_utils.hpp"
 #include "market_data.pb.h"
 #include "source_factory.hpp"
@@ -37,6 +38,10 @@ int main(int argc, char* argv[]) {
         std::string symbol = "dashbtc";
         std::optional<double> threshold = std::nullopt;
 
+        bool bench = false;
+        uint32_t bench_seconds = 20;
+        uint32_t warmup_seconds = 3;
+
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -49,6 +54,9 @@ int main(int argc, char* argv[]) {
             if (arg == "--threshold" && i + 1 < argc) {
                 threshold = std::stod(argv[++i]);
             }
+            if (arg == "--bench") {
+                bench = true;
+            }
             if (arg == "--help" || arg == "-h") {
                 std::ostringstream oss;
                 oss << "Usage: " << argv[0] << " [options]\n\n"
@@ -56,7 +64,9 @@ int main(int argc, char* argv[]) {
                     << "  --source <live|replay>   Data feed [live]\n"
                     << "  --symbol <symbol>        Symbol for live feed [dashbtc]\n"
                     << "  --threshold <value>      Spread threshold (live:[0.0000007], replay:[1.0])\n"
+                    << "  --bench                  Run benchmark mode\n"
                     << "  --help, -h               Print this help";
+
                 log_utils::log_to_stream(std::cout, oss.str());
                 google::protobuf::ShutdownProtobufLibrary();
                 return 0;
@@ -88,74 +98,79 @@ int main(int argc, char* argv[]) {
             rust_set_threshold(*threshold);
         }
 
-        std::atomic<bool> done{false};
-        std::atomic<uint64_t> drops{0};
-        TobRingBuffer q;
+        if (bench) {
+                const BenchmarkResult r = Benchmark::run(*mds);
+        } else {
 
-        std::thread ingest([&] {
-            hft::TopOfBook tob;
-            while (mds->next(tob)) {
-                if (!q.push(tob)) { // Drop on full queue
-                    // std::cerr << "Queue is full\n";
-                    drops.fetch_add(1);
-                }
-            }
-            done.store(true);
-        });
+            std::atomic<bool> done{false};
+            std::atomic<uint64_t> drops{0};
+            TobRingBuffer q;
 
-        std::thread process([&] {
-            std::string payload;
-            hft::TopOfBook tob;
-            auto last_log = std::chrono::steady_clock::now();
-            while (true) {
-                if (!q.pop(tob)) {
-                    // std::cerr << "Queue is empty\n";
-                    if (done.load()) {
-                        break;
+            std::thread ingest([&] {
+                hft::TopOfBook tob;
+                while (mds->next(tob)) {
+                    if (!q.push(tob)) { // Drop on full queue
+                        // std::cerr << "Queue is full\n";
+                        drops.fetch_add(1);
                     }
-                    std::this_thread::yield();
-                    continue;
                 }
-                tob.SerializeToString(&payload);
+                done.store(true);
+            });
 
-                auto t0 = log_utils::now_ns();
-                int32_t action = rust_decide(
-                    reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+            std::thread process([&] {
+                std::string payload;
+                hft::TopOfBook tob;
+                auto last_log = std::chrono::steady_clock::now();
+                while (true) {
+                    if (!q.pop(tob)) {
+                        // std::cerr << "Queue is empty\n";
+                        if (done.load()) {
+                            break;
+                        }
+                        std::this_thread::yield();
+                        continue;
+                    }
+                    tob.SerializeToString(&payload);
 
-                auto t1 = log_utils::now_ns();
-                hft::StrategySignal sig;
-                sig.set_symbol(tob.symbol());
-                sig.set_action(static_cast<hft::QuoteAction>(action));
-                sig.set_reason("spread_cond");
-                sig.set_ts_ns(t1);
+                    auto t0 = log_utils::now_ns();
+                    int32_t action = rust_decide(
+                        reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
 
-                auto now = std::chrono::steady_clock::now();
-                if (now - last_log >= std::chrono::seconds(1) || log_all) { // Limit logging rate
-                    std::ostringstream oss;
-                    oss << "Signal:"
-                        << " symbol=" << sig.symbol()
-                        << " action=" << action_to_str(action)
-                        << " reason=" << sig.reason()
-                        << " ts_ns=" << sig.ts_ns();
-                    log_utils::log_to_stream(std::cout, oss.str());
-                    oss.str("");
-                    oss.clear();
-                    const auto recv_ns = tob.recv_ts_ns();
-                    const auto e2e_ns = (recv_ns > 0) ? (t1 - recv_ns) : 0;
-                    oss << "Latency:"
-                        << " e2e_ns=" << e2e_ns
-                        << " strat_ns=" << t1 - t0;
-                    log_utils::log_to_stream(std::cerr, oss.str());
-                    last_log = now;
+                    auto t1 = log_utils::now_ns();
+                    hft::StrategySignal sig;
+                    sig.set_symbol(tob.symbol());
+                    sig.set_action(static_cast<hft::QuoteAction>(action));
+                    sig.set_reason("spread_cond");
+                    sig.set_ts_ns(t1);
+
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - last_log >= std::chrono::seconds(1) || log_all) { // Limit logging rate
+                        std::ostringstream oss;
+                        oss << "Signal:"
+                            << " symbol=" << sig.symbol()
+                            << " action=" << action_to_str(action)
+                            << " reason=" << sig.reason()
+                            << " ts_ns=" << sig.ts_ns();
+                        log_utils::log_to_stream(std::cout, oss.str());
+                        oss.str("");
+                        oss.clear();
+                        const auto recv_ns = tob.recv_ts_ns();
+                        const auto e2e_ns = (recv_ns > 0) ? (t1 - recv_ns) : 0;
+                        oss << "Latency:"
+                            << " e2e_ns=" << e2e_ns
+                            << " strat_ns=" << t1 - t0;
+                        log_utils::log_to_stream(std::cerr, oss.str());
+                        last_log = now;
+                    }
                 }
-            }
-        });
+            });
 
-        ingest.join();
-        process.join();
-        std::ostringstream oss;
-        oss << "drops=" << drops.load();
-        log_utils::log_to_stream(std::cerr, oss.str());
+            ingest.join();
+            process.join();
+            std::ostringstream oss;
+            oss << "drops=" << drops.load();
+            log_utils::log_to_stream(std::cerr, oss.str());
+        };
     } catch (const std::exception& e) {
         log_utils::log_to_stream(std::cerr, "Error: " + std::string(e.what()));
         exit_code = 1;

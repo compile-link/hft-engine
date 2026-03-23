@@ -34,6 +34,7 @@ add_executable(hft
   src/replay_source.cpp
   src/live_websocket_source.cpp
   src/tob_ring_buffer.cpp
+  src/benchmark.cpp
 )
 add_dependencies(hft strategy_engine_build)
 target_include_directories(hft PRIVATE
