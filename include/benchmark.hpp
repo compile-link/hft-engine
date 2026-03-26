@@ -1,6 +1,7 @@
 #pragma once
 
 #include "market_data_source.hpp"
+#include <chrono>
 #include <cstdint>
 
 struct BenchmarkResult {
@@ -17,6 +18,6 @@ class Benchmark {
     static BenchmarkResult run(MarketDataSource& src);
 
   private:
-    static constexpr uint32_t warmup_seconds = 3;
-    static constexpr uint32_t measure_seconds = 20;
+    static constexpr std::chrono::seconds warmup_seconds{3};
+    static constexpr std::chrono::seconds measure_seconds{20};
 };
