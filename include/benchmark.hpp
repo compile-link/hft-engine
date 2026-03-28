@@ -11,6 +11,8 @@ struct BenchmarkResult {
     uint64_t drops = 0;
     uint64_t e2e_p50_ns = 0, e2e_p99_ns = 0, e2e_p999_ns = 0, e2e_max_ns = 0;
     uint64_t strat_p50_ns = 0, strat_p99_ns = 0, strat_p999_ns = 0, strat_max_ns = 0;
+
+    void print() const;
 };
 
 class Benchmark {

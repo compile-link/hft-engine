@@ -39,8 +39,6 @@ int main(int argc, char* argv[]) {
         std::optional<double> threshold = std::nullopt;
 
         bool bench = false;
-        uint32_t bench_seconds = 20;
-        uint32_t warmup_seconds = 3;
 
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
@@ -100,6 +98,7 @@ int main(int argc, char* argv[]) {
 
         if (bench) {
                 const BenchmarkResult r = Benchmark::run(*mds);
+                r.print();
         } else {
 
             std::atomic<bool> done{false};
