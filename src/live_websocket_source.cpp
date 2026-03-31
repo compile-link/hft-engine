@@ -1,5 +1,6 @@
 #include "live_websocket_source.hpp"
 #include "log_utils.hpp"
+#include "time_utils.hpp"
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <ostream>
@@ -120,7 +121,7 @@ bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& o
         out.set_ask_px(ask_px);
         out.set_ask_qty(ask_qty);
         out.set_exchange_ts_ns(0);
-        out.set_recv_ts_ns(log_utils::now_ns());
+        out.set_recv_ts_ns(time_utils::now_ns());
         out.set_sequence(update_id);
 
         return true;

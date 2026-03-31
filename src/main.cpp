@@ -1,5 +1,6 @@
 #include "benchmark.hpp"
 #include "log_utils.hpp"
+#include "time_utils.hpp"
 #include "market_data.pb.h"
 #include "source_factory.hpp"
 #include "tob_ring_buffer.hpp"
@@ -131,11 +132,11 @@ int main(int argc, char* argv[]) {
                     }
                     tob.SerializeToString(&payload);
 
-                    auto t0 = log_utils::now_ns();
+                    auto t0 = time_utils::now_ns();
                     int32_t action = rust_decide(
                         reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
 
-                    auto t1 = log_utils::now_ns();
+                    auto t1 = time_utils::now_ns();
                     hft::StrategySignal sig;
                     sig.set_symbol(tob.symbol());
                     sig.set_action(static_cast<hft::QuoteAction>(action));
