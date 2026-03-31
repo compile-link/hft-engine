@@ -45,7 +45,9 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
     std::atomic<bool> measure_done{false};
     std::atomic<bool> done{false};
     std::vector<uint64_t> e2e_samples;
+    e2e_samples.reserve(250000);
     std::vector<uint64_t> strat_samples;
+    strat_samples.reserve(250000);
     TobRingBuffer q;
 
     std::thread ingest([&] {
@@ -98,9 +100,9 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
             sig.set_ts_ns(static_cast<uint64_t>(t1_ns));
             if (measure_started.load() && !measure_done.load()) {
                 ++measured_msgs;
-                uint64_t recv_ts_ns = tob.recv_ts_ns() > 0 ? tob.recv_ts_ns() : 0;
+                const uint64_t recv_ts_ns = tob.recv_ts_ns() > 0 ? tob.recv_ts_ns() : 0;
                 if (recv_ts_ns > 0 && t1_ns >= recv_ts_ns) {
-                    e2e_samples.push_back(t1_ns - tob.recv_ts_ns());
+                    e2e_samples.push_back(t1_ns - recv_ts_ns);
                 }
                 strat_samples.push_back(t1_ns - t0_ns);
             }
