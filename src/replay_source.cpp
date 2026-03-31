@@ -1,4 +1,5 @@
 #include "replay_source.hpp"
+#include "time_utils.hpp"
 #include <thread>
 
 namespace {
@@ -46,15 +47,20 @@ bool ReplaySource::next(hft::TopOfBook& out) {
 #ifdef HFT_PROFILE
     static auto k_mock_ticks = k_ticks_expanded;
 #endif
-    if (idx_ >= k_mock_ticks.size()) {
+    if (k_mock_ticks.empty()) {
+        return false;
+    }
+    idx_ %= k_mock_ticks.size();
+
+    if (std::chrono::steady_clock::now() > replay_end) {
         return false;
     }
 
     out = k_mock_ticks[idx_++];
+    const auto t_ns = time_utils::now_ns();
+    out.set_recv_ts_ns(t_ns);
 
-#ifdef HFT_PROFILE
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-#endif
 
     return true;
 }
