@@ -1,8 +1,8 @@
 #include "benchmark.hpp"
 #include "log_utils.hpp"
-#include "time_utils.hpp"
 #include "market_data.pb.h"
 #include "source_factory.hpp"
+#include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
 #include <atomic>
 #include <chrono>
@@ -98,12 +98,13 @@ int main(int argc, char* argv[]) {
         }
 
         if (bench) {
-                const BenchmarkResult r = Benchmark::run(*mds);
-                r.print();
+            const BenchmarkResult r = Benchmark::run(*mds);
+            r.print();
         } else {
 
             std::atomic<bool> done{false};
             std::atomic<uint64_t> drops{0};
+            uint64_t serialize_errs = 0;
             TobRingBuffer q;
 
             std::thread ingest([&] {
@@ -130,7 +131,11 @@ int main(int argc, char* argv[]) {
                         std::this_thread::yield();
                         continue;
                     }
-                    tob.SerializeToString(&payload);
+
+                    if (!tob.SerializeToString(&payload)) {
+                        ++serialize_errs;
+                        continue;
+                    }
 
                     auto t0 = time_utils::now_ns();
                     int32_t action = rust_decide(
@@ -168,7 +173,8 @@ int main(int argc, char* argv[]) {
             ingest.join();
             process.join();
             std::ostringstream oss;
-            oss << "drops=" << drops.load();
+            oss << "drops=" << drops.load()
+                << "serialize_errs=" << serialize_errs;
             log_utils::log_to_stream(std::cerr, oss.str());
         };
     } catch (const std::exception& e) {

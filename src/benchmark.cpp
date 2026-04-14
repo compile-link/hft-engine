@@ -44,6 +44,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
     std::atomic<bool> measure_started{false};
     std::atomic<bool> measure_done{false};
     std::atomic<bool> done{false};
+    uint64_t serialize_errs = 0;
     std::vector<uint64_t> e2e_samples;
     e2e_samples.reserve(250000);
     std::vector<uint64_t> strat_samples;
@@ -86,7 +87,10 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
                 std::this_thread::yield();
                 continue;
             }
-            tob.SerializeToString(&payload);
+            if (!tob.SerializeToString(&payload)) {
+                ++serialize_errs;
+                continue;
+            }
 
             const auto t0_ns = time_utils::now_ns();
             int32_t action = rust_decide(
@@ -117,6 +121,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
         r.measured_msgs = measured_msgs;
         r.throughput_msgs_per_sec = (r.measured_seconds > 0) ? (static_cast<double>(r.measured_msgs) / r.measured_seconds) : 0.0;
         r.drops = drops;
+        r.serialize_errs = serialize_errs;
 
         std::sort(e2e_samples.begin(), e2e_samples.end());
         std::sort(strat_samples.begin(), strat_samples.end());
@@ -134,11 +139,11 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
             r.e2e_max_ns = 0;
         } else {
             n = e2e_samples.size();
-            idx50 = static_cast<size_t>(std::floor(0.5 * (n - 1)));
+            idx50 = ((n - 1) * 500u / 1000u);
             r.e2e_p50_ns = e2e_samples[idx50];
-            idx99 = static_cast<size_t>(std::floor(0.99 * (n - 1)));
+            idx99 = ((n - 1) * 990u / 1000u);
             r.e2e_p99_ns = e2e_samples[idx99];
-            idx999 = static_cast<size_t>(std::floor(0.999 * (n - 1)));
+            idx999 = ((n - 1) * 999u / 1000u);
             r.e2e_p999_ns = e2e_samples[idx999];
             r.e2e_max_ns = e2e_samples.back();
         }
@@ -151,11 +156,11 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
             r.strat_max_ns = 0;
         } else {
             n = strat_samples.size();
-            idx50 = static_cast<size_t>(std::floor(0.5 * (n - 1)));
+            idx50 = ((n - 1) * 500u / 1000u);
             r.strat_p50_ns = strat_samples[idx50];
-            idx99 = static_cast<size_t>(std::floor(0.99 * (n - 1)));
+            idx99 = ((n - 1) * 990u / 1000u);
             r.strat_p99_ns = strat_samples[idx99];
-            idx999 = static_cast<size_t>(std::floor(0.999 * (n - 1)));
+            idx999 = ((n - 1) * 999u / 1000u);
             r.strat_p999_ns = strat_samples[idx999];
             r.strat_max_ns = strat_samples.back();
         }
