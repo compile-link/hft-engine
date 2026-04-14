@@ -70,12 +70,15 @@ bool LiveWebSocketSource::subscribe() {
 
 bool LiveWebSocketSource::read_message(std::string& msg) {
     msg.clear();
+    msg.reserve(8192);
+    static constexpr size_t k_max_msg = 256 * 1024;
     char buf[8192];
+
     while (true) {
         size_t nrecv = 0;
         const struct curl_ws_frame* meta = nullptr;
-
         const CURLcode rc = curl_ws_recv(curl_, buf, sizeof(buf), &nrecv, &meta); // Receive WebSocket frame
+
         if (rc == CURLE_AGAIN) {
             // no data yet, wait
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -84,16 +87,32 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
         if (rc != CURLE_OK) {
             return false;
         }
-        if (meta && (meta->flags & CURLWS_CLOSE)) {
+        if (!meta) {
+            continue;
+        }
+        if (meta->flags & CURLWS_CLOSE) {
             return false;
         }
-        if (meta && (meta->flags & CURLWS_PING)) {
-            // Ignore ping frames
+        if (meta->flags & CURLWS_PING) {
+            continue;
+        }
+        if (meta->flags & CURLWS_PONG) {
             continue;
         }
 
-        msg.assign(buf, nrecv);
-        return !msg.empty();
+        if (nrecv > 0) {
+            if (msg.size() + nrecv > k_max_msg) {
+                return false;
+            }
+            msg.append(buf, nrecv);
+        }
+
+        const bool frame_finished = (meta->bytesleft == 0);
+        const bool msg_finished = frame_finished && !(meta->flags & CURLWS_CONT);
+
+        if (msg_finished) {
+            return !msg.empty();
+        }
     }
 }
 
