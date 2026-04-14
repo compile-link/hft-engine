@@ -1,4 +1,5 @@
 #include "benchmark.hpp"
+#include "runtime/curl_global_guard.hpp"
 #include "log_utils.hpp"
 #include "market_data.pb.h"
 #include "source_factory.hpp"
@@ -35,6 +36,7 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
+        CurlGlobalGuard curl_guard; // process-scope, init and cleanup
         std::string source = "live";
         std::string symbol = "dashbtc";
         std::optional<double> threshold = std::nullopt;

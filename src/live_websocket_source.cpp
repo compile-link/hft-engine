@@ -9,13 +9,10 @@
 
 LiveWebSocketSource::LiveWebSocketSource(std::string symbol) : symbol_(std::move(symbol)),
                                                                // Individual Symbol Book Ticker Stream
-                                                               url_(k_binance_ws_base_endpoint + symbol_ + k_stream) {
-    curl_global_init(CURL_GLOBAL_DEFAULT); // Initialize libcurl globally
-}
+                                                               url_(k_binance_ws_base_endpoint + symbol_ + k_stream) {}
 
 LiveWebSocketSource::~LiveWebSocketSource() {
     close();
-    curl_global_cleanup(); // Global cleanup
 }
 
 bool LiveWebSocketSource::next(hft::TopOfBook& out) {
