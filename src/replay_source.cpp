@@ -43,6 +43,12 @@ namespace {
 #endif
 } // namespace
 
+ReplaySource::ReplaySource(ReplayConfig cfg) : cfg_(cfg) {
+    if (cfg_.max_runtime) {
+        replay_end_ = std::chrono::steady_clock::now() + *cfg_.max_runtime;
+    }
+}
+
 bool ReplaySource::next(hft::TopOfBook& out) {
 #ifdef HFT_PROFILE
     static auto k_mock_ticks = k_ticks_expanded;
@@ -50,17 +56,23 @@ bool ReplaySource::next(hft::TopOfBook& out) {
     if (k_mock_ticks.empty()) {
         return false;
     }
-    idx_ %= k_mock_ticks.size();
 
-    if (std::chrono::steady_clock::now() > replay_end) {
+    if (cfg_.loop)
+        idx_ %= k_mock_ticks.size();
+    else if (idx_ >= k_mock_ticks.size())
         return false;
+
+    if (replay_end_) {
+        if (std::chrono::steady_clock::now() > *replay_end_) {
+            return false;
+        }
     }
 
     out = k_mock_ticks[idx_++];
     const auto t_ns = time_utils::now_ns();
     out.set_recv_ts_ns(t_ns);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(cfg_.sleep_per_tick);
 
     return true;
 }
