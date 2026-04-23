@@ -1,7 +1,8 @@
 #include "benchmark.hpp"
-#include "runtime/curl_global_guard.hpp"
 #include "log_utils.hpp"
 #include "market_data.pb.h"
+#include "replay_source.hpp"
+#include "runtime/curl_global_guard.hpp"
 #include "source_factory.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
@@ -42,6 +43,7 @@ int main(int argc, char* argv[]) {
         std::optional<double> threshold = std::nullopt;
 
         bool bench = false;
+        ReplayConfig replayConfig;
 
         // Parse command-line arguments, supports --replay and --source
         for (int i = 1; i < argc; i++) {
@@ -57,6 +59,9 @@ int main(int argc, char* argv[]) {
             }
             if (arg == "--bench") {
                 bench = true;
+                replayConfig.loop = true;
+                replayConfig.sleep_per_tick = std::chrono::milliseconds(0);
+                replayConfig.max_runtime = std::nullopt;
             }
             if (arg == "--help" || arg == "-h") {
                 std::ostringstream oss;
@@ -77,14 +82,14 @@ int main(int argc, char* argv[]) {
         bool log_all = false;
         std::unique_ptr<MarketDataSource> mds;
         if (source == "replay") {
-            mds = utils::make_source(utils::SourceType::Replay);
+            mds = utils::make_replay_source(replayConfig);
             log_utils::log_to_stream(std::cout, "Replay mode");
             if (!threshold) {
                 threshold = 1.0; // Default for replay stub
             }
             log_all = true;
         } else if (source == "live") {
-            mds = utils::make_source(utils::SourceType::Live, symbol);
+            mds = utils::make_live_source(symbol);
             log_utils::log_to_stream(std::cout, "Live mode");
             if (!threshold) {
                 threshold = 0.0000007; // Default for live feed
@@ -176,7 +181,7 @@ int main(int argc, char* argv[]) {
             process.join();
             std::ostringstream oss;
             oss << "drops=" << drops.load()
-                << "serialize_errs=" << serialize_errs;
+                << " serialize_errs=" << serialize_errs;
             log_utils::log_to_stream(std::cerr, oss.str());
         };
     } catch (const std::exception& e) {
