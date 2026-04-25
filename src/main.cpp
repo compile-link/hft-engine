@@ -79,7 +79,6 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        bool log_all = false;
         std::unique_ptr<MarketDataSource> mds;
         if (source == "replay") {
             mds = utils::make_replay_source(replayConfig);
@@ -87,7 +86,6 @@ int main(int argc, char* argv[]) {
             if (!threshold) {
                 threshold = 1.0; // Default for replay stub
             }
-            log_all = true;
         } else if (source == "live") {
             mds = utils::make_live_source(symbol);
             log_utils::log_to_stream(std::cout, "Live mode");
@@ -156,7 +154,7 @@ int main(int argc, char* argv[]) {
                     sig.set_ts_ns(t1);
 
                     auto now = std::chrono::steady_clock::now();
-                    if (now - last_log >= std::chrono::seconds(1) || log_all) { // Limit logging rate
+                    if (now - last_log >= std::chrono::seconds(1)) { // Limit logging rate
                         std::ostringstream oss;
                         oss << "Signal:"
                             << " symbol=" << sig.symbol()
