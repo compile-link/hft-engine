@@ -22,7 +22,7 @@ Signal: symbol=DASHBTC action=QUOTE_BOTH reason=spread_cond ts_ns=23142300041844
 
 ## Requirements
 - CMake 3.10+
-- C++20 compiler (GCC/Clang)
+- C++17 compiler (GCC/Clang)
 - Protobuf
 - libcurl
 - Rust + Cargo
