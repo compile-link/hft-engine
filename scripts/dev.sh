@@ -23,5 +23,5 @@ if [[ "$CLEAN" -eq 1 ]]; then
     rm -rf build
 fi
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+cmake -S . -B build -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build -j

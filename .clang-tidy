@@ -1,0 +1,8 @@
+---
+Checks: >
+  clang-analyzer-*,
+  bugprone-*
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(src|include)/'
+ExcludeHeaderFilterRegex: '^(build|generated|strategy_engine)/'
+SystemHeaders: false
