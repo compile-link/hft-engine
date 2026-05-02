@@ -38,14 +38,14 @@ int main(int argc, char* argv[]) {
     int exit_code = 0;
     try {
         CurlGlobalGuard curl_guard; // process-scope, init and cleanup
-        std::string source = "live";
+        std::optional<std::string> source = std::nullopt;
         std::string symbol = "dashbtc";
         std::optional<double> threshold = std::nullopt;
 
         bool bench = false;
         ReplayConfig replayConfig;
 
-        // Parse command-line arguments, supports --replay and --source
+        // Parse command-line arguments
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             if (arg == "--source" && i + 1 < argc) {
@@ -70,13 +70,22 @@ int main(int argc, char* argv[]) {
                     << "  --source <live|replay>   Data feed [live]\n"
                     << "  --symbol <symbol>        Symbol for live feed [dashbtc]\n"
                     << "  --threshold <value>      Spread threshold (live:[0.0000007], replay:[1.0])\n"
-                    << "  --bench                  Run benchmark mode\n"
+                    << "  --bench                  Run benchmark mode (replay-only)\n"
                     << "  --help, -h               Print this help";
 
                 log_utils::log_to_stream(std::cout, oss.str());
                 google::protobuf::ShutdownProtobufLibrary();
                 return 0;
             }
+        }
+        if (bench) {
+            if (source && *source != "replay") {
+                throw std::invalid_argument("Benchmark available only in replay mode");
+            }
+            source = "replay";
+        }
+        if (!source) {
+            source = "live";
         }
 
         std::unique_ptr<MarketDataSource> mds;
