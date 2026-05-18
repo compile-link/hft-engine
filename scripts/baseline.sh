@@ -39,12 +39,19 @@ if [[ -n "${1:-}" ]]; then
     runs="$1"
 fi
 
+{
+  echo "$(date -Iseconds)"
+  echo "git_commit=$(git -C "${root_dir}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "kernel=$(uname -sr)"
+  echo
+} >> "${out_file}"
+
 for i in $(seq 1 "${runs}"); do
 {
   echo "[baseline] run ${i}/${runs}..."
   {
       echo "=== RUN ${i} $(date -Iseconds) ==="
-      "${bin}" --source replay --bench 2>&1
+      /usr/bin/time -v "${bin}" --source replay --bench 2>&1
       echo
   } >> "${out_file}"
 }
