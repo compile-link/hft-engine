@@ -1,14 +1,13 @@
 #include "benchmark.hpp"
 #include "log_utils.hpp"
 #include "market_data.pb.h"
+#include "rust_strategy_ffi.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
-
-extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
 
 void BenchmarkResult::print() const {
     std::ostringstream oss;
@@ -44,7 +43,6 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
     std::atomic<bool> measure_started{false};
     std::atomic<bool> measure_done{false};
     std::atomic<bool> done{false};
-    uint64_t serialize_errs = 0;
     std::vector<uint64_t> e2e_samples;
     e2e_samples.reserve(250000);
     std::vector<uint64_t> strat_samples;
@@ -77,7 +75,6 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
     });
 
     std::thread process([&] {
-        std::string payload;
         hft::TopOfBook tob;
         while (true) {
             if (!q.pop(tob)) {
@@ -87,16 +84,18 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
                 std::this_thread::yield();
                 continue;
             }
-            if (!tob.SerializeToString(&payload)) {
-                ++serialize_errs;
-                continue;
-            }
+
+            TobRaw raw{
+                tob.bid_px(),
+                tob.bid_qty(),
+                tob.ask_px(),
+                tob.ask_qty(),
+                static_cast<uint64_t>(tob.recv_ts_ns())};
 
             const auto t0_ns = time_utils::now_ns();
-            int32_t action = rust_decide(
-                reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
-
+            int32_t action = rust_decide_raw(&raw);
             const auto t1_ns = time_utils::now_ns();
+
             hft::StrategySignal sig;
             sig.set_symbol(tob.symbol());
             sig.set_action(static_cast<hft::QuoteAction>(action));
@@ -121,7 +120,6 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
         r.measured_msgs = measured_msgs;
         r.throughput_msgs_per_sec = (r.measured_seconds > 0) ? (static_cast<double>(r.measured_msgs) / r.measured_seconds) : 0.0;
         r.drops = drops;
-        r.serialize_errs = serialize_errs;
 
         std::sort(e2e_samples.begin(), e2e_samples.end());
         std::sort(strat_samples.begin(), strat_samples.end());

@@ -7,6 +7,15 @@ pub mod pb {
 
 static THRESHOLD: OnceLock<f64> = OnceLock::new();
 
+#[repr(C)]
+pub struct TobRaw {
+    pub bid_px: f64,
+    pub bid_qty: f64,
+    pub ask_px: f64,
+    pub ask_qty: f64,
+    pub recv_ts_ns: u64,
+}
+
 #[no_mangle]
 pub extern "C" fn rust_set_threshold(v: f64) {
     if v.is_finite() && v > 0.0 {
@@ -35,6 +44,26 @@ pub extern "C" fn rust_decide(top_ptr: *const u8, top_len: usize) -> i32 {
     }
 
     let spread = msg.ask_px - msg.bid_px;
+    let threshold = get_threshold();
+
+    if spread >= threshold {
+        pb::QuoteAction::QuoteBoth as i32
+    } else {
+        pb::QuoteAction::Hold as i32
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_decide_raw(in_ptr: *const TobRaw) -> i32 {
+    if in_ptr.is_null() {
+        return pb::QuoteAction::Hold as i32;
+    }
+    let msg_raw = unsafe { &*in_ptr };
+    if msg_raw.bid_px <= 0.0 || msg_raw.ask_px <= 0.0 || msg_raw.ask_px < msg_raw.bid_px {
+        return pb::QuoteAction::CancelAll as i32;
+    }
+
+    let spread = msg_raw.ask_px - msg_raw.bid_px;
     let threshold = get_threshold();
 
     if spread >= threshold {
