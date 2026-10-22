@@ -1,6 +1,6 @@
 # HFT Engine Prototype
 
-Multithreaded market data pipeline in C++ with a Rust strategy module, Protobuf serialization across the FFI boundary, and latency instrumentation with percentile reporting.
+Prototype for an HFT engine, currently built around a multithreaded market-data pipeline in C++ with a Rust strategy module, Protobuf serialization across the FFI boundary, and latency instrumentation with percentile reporting.
 
 Built to explore the design of a low-latency processing pipeline: decoupled producer/consumer threads, a lock-free data transfer mechanism, and measurable per-message latency across each stage.
 
@@ -124,4 +124,8 @@ scripts/                Build helpers and benchmark runner
 
 ## Status
 
-Working pipeline: live WebSocket ingest, replay mode, benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub ticks (CSV loading planned). Planned work: order output stage, expanded strategy logic, deeper latency profiling.
+Working pipeline: live WebSocket ingest, replay mode, and benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub ticks.
+
+## Roadmap
+
+The project is intended to develop into a full HFT engine. Planned capabilities and engineering work are tracked in [ROADMAP.md](ROADMAP.md).
