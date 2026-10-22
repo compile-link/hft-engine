@@ -1,4 +1,3 @@
-/benchmarks/
 /build/
 .vscode/*
 !.vscode/settings.json

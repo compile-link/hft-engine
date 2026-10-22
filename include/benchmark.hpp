@@ -9,6 +9,7 @@ struct BenchmarkResult {
     double measured_seconds = 0.0;
     double throughput_msgs_per_sec = 0.0;
     uint64_t drops = 0;
+    uint64_t serialize_errs = 0;
     uint64_t e2e_p50_ns = 0, e2e_p99_ns = 0, e2e_p999_ns = 0, e2e_max_ns = 0;
     uint64_t strat_p50_ns = 0, strat_p99_ns = 0, strat_p999_ns = 0, strat_max_ns = 0;
 
