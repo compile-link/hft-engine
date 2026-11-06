@@ -33,7 +33,11 @@ add_executable(hft
   src/source_factory.cpp
   src/replay_source.cpp
   src/live_websocket_source.cpp
+  src/book_ticker_parse.cpp
   src/tob_ring_buffer.cpp
+  src/tob_validator.cpp
+  src/feed_health.cpp
+  src/sequence_tracker.cpp
   src/benchmark.cpp
 )
 add_dependencies(hft strategy_engine_build)
@@ -80,4 +84,10 @@ endif()
 option(HFT_PROFILE "Enable profiling helpers" OFF)
 if(HFT_PROFILE)
     target_compile_definitions(hft PRIVATE HFT_PROFILE)
+endif()
+
+option(HFT_BUILD_TESTS "Build unit tests (requires GoogleTest)" ON)
+if(HFT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

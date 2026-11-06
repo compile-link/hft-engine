@@ -5,6 +5,8 @@
 #include <cstdint>
 
 struct BenchmarkResult {
+    bool validated = false; // ingest ran TobValidator (mirrors the live path)
+    uint64_t rejected = 0;
     uint64_t measured_msgs = 0;
     double measured_seconds = 0.0;
     double throughput_msgs_per_sec = 0.0;
@@ -18,7 +20,7 @@ struct BenchmarkResult {
 
 class Benchmark {
   public:
-    static BenchmarkResult run(MarketDataSource& src);
+    static BenchmarkResult run(MarketDataSource& src, bool validate);
 
   private:
     static constexpr std::chrono::seconds warmup_seconds{3};

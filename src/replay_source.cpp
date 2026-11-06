@@ -53,12 +53,14 @@ bool ReplaySource::next(hft::TopOfBook& out) {
 #ifdef HFT_PROFILE
     static auto k_mock_ticks = k_ticks_expanded;
 #endif
-    if (k_mock_ticks.empty()) {
+    if (stop_requested() || k_mock_ticks.empty()) {
         return false;
     }
 
-    if (cfg_.loop)
-        idx_ %= k_mock_ticks.size();
+    if (cfg_.loop && idx_ >= k_mock_ticks.size()) {
+        idx_ = 0;
+        session_++;
+    }
     else if (idx_ >= k_mock_ticks.size())
         return false;
 
@@ -69,6 +71,7 @@ bool ReplaySource::next(hft::TopOfBook& out) {
     }
 
     out = k_mock_ticks[idx_++];
+    out.set_session(session_);
     const auto t_ns = time_utils::now_ns();
     out.set_recv_ts_ns(t_ns);
 

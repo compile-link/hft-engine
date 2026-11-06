@@ -24,20 +24,19 @@ class LiveWebSocketSource : public MarketDataSource {
     bool connect();
     bool subscribe();
     bool read_message(std::string& msg);
-    bool parse_to_tob(const std::string& msg, hft::TopOfBook& out);
     void reconnect_with_backoff();
     void close();
     void report_with_interval();
 
     static constexpr const char* k_btcusdt = "btcusdt";
     static constexpr const char* k_dashbtc = "dashbtc";
-    static constexpr const char* k_default_symbol = k_dashbtc;
+    static constexpr const char* k_default_symbol = k_btcusdt;
     static constexpr const char* k_binance_ws_base_endpoint = "wss://stream.binance.com:9443/ws/";
     static constexpr const char* k_stream = "@bookTicker";
     std::string symbol_;
     std::string url_;
     CURL* curl_ = nullptr;
-    uint64_t seq_ = 0;
+    uint64_t session_ = 0; // incremented on each successful connect
     std::chrono::milliseconds backoff_ms_{1000};
     Stats stats_{};
     Stats last_report_stats_{};
