@@ -47,7 +47,9 @@ In normal mode these are logged at a rate-limited 1s interval. In benchmark mode
 ./build/hft --bench
 ```
 
-Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`. Phases:
+Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`.
+
+By default the benchmark ingest path skips `TobValidator`, so results stay comparable with earlier baselines. Pass `--bench-validate` to run the validator in the ingest thread as the live path does; its cost then lands in `e2e_ns`. The output records `validate=on|off`. Phases:
 
 - **Warmup**: 3 seconds, samples discarded
 - **Measurement**: 20 seconds of samples collected per metric
@@ -55,7 +57,7 @@ Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--
 Reports on completion:
 
 ```
-Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=...
+Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=... validate=off rejected=0
 
 Benchmark Latency: e2e_p50_ns=... e2e_p99_ns=... e2e_p999_ns=... e2e_max_ns=... strat_p50_ns=... strat_p99_ns=... strat_p999_ns=... strat_max_ns=...
 ```
@@ -90,6 +92,18 @@ scripts/dev.sh
 * libcurl
 * Rust + Cargo
 * nlohmann/json
+* GoogleTest (tests only; disable with `-DHFT_BUILD_TESTS=OFF`)
+
+## Test
+
+```bash
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+Rust strategy tests: `cd strategy_engine && cargo test`.
+
+Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links only the Protobuf library and the code under test, not the Rust module or libcurl.
 
 ## Run
 
@@ -107,7 +121,20 @@ scripts/dev.sh
 
 # Benchmark mode
 ./build/hft --bench
+
+# Feed health limits (stop conditions)
+./build/hft --max-no-valid-ms 10000 --startup-grace-ms 15000
 ```
+
+**Feed health.** Outside benchmark mode, a watchdog stops the pipeline if no valid tick arrives within `--max-no-valid-ms` (default 10s), or within `--startup-grace-ms` (default 15s) before the first one. The stop is logged with a reason and exits with code `2`:
+
+- `invalid_data` - messages arrived but were all rejected or failed to parse (e.g. a persistent `symbol_mismatch`)
+- `stale_feed` - connection alive (heartbeat frames) but no market data
+- `dead_feed` - no frames at all: disconnected, stuck reconnecting, or a silent source
+
+**Ingest checks.** Every tick passes `TobValidator` (symbol, finite/positive prices and quantities, no crossed or locked book) and then `SequenceTracker`. Update IDs must increase within a source session; duplicates, backwards IDs and missing IDs are dropped. Each (re)connect or replay loop starts a new `session`, which resets the baseline. Rejections are counted per reason and summarized at shutdown.
+
+**Feed status to the strategy.** Each `TopOfBook` carries `feed_status`: `FEED_OK`, `FEED_SESSION_START` (first tick after a (re)connect) or `FEED_HALTED` (sent once when the watchdog stops the feed). The strategy returns `CANCEL_ALL` for any status other than OK/SESSION_START, and for undecodable messages and non-finite, crossed or locked books.
 
 Default thresholds if not specified: live `0.0000007`, replay `1.0`.
 
@@ -120,6 +147,7 @@ include/runtime/        Process-scope RAII guards (CurlGlobalGuard)
 proto/                  Protobuf schema: TopOfBook, StrategySignal, QuoteAction
 strategy_engine/        Rust FFI module (lib.rs, build.rs for prost codegen)
 scripts/                Build helpers and benchmark runner
+tests/                  GoogleTest unit tests (CTest)
 ```
 
 ## Status

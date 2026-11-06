@@ -37,7 +37,7 @@ class LiveWebSocketSource : public MarketDataSource {
     std::string symbol_;
     std::string url_;
     CURL* curl_ = nullptr;
-    uint64_t seq_ = 0;
+    uint64_t session_ = 0; // incremented on each successful connect
     std::chrono::milliseconds backoff_ms_{1000};
     Stats stats_{};
     Stats last_report_stats_{};

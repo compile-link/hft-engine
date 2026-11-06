@@ -22,6 +22,7 @@ class ReplaySource : public MarketDataSource {
 
   private:
     std::size_t idx_ = 0;
+    uint64_t session_ = 1; // incremented on each loop restart (sequences repeat)
     std::optional<std::chrono::steady_clock::time_point> replay_end_;
     ReplayConfig cfg_;
 };

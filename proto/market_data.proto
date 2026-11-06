@@ -11,6 +11,18 @@ message TopOfBook {
   uint64 exchange_ts_ns = 6;
   uint64 recv_ts_ns = 7;
   uint64 sequence = 8;
+  // Source session (epoch): increments on every (re)connect or replay restart.
+  // Sequences are only comparable within one session; a change marks a new stream.
+  uint64 session = 9;
+  // Data status set by the engine after validation/sequencing; strategies must not quote unless OK/SESSION_START
+  FeedStatus feed_status = 10;
+}
+
+enum FeedStatus {
+  FEED_STATUS_UNSPECIFIED = 0; // never set by the engine; treated as unsafe
+  FEED_OK = 1;                 // validated, in sequence
+  FEED_SESSION_START = 2;      // validated, first tick of a new session (after (re)connect)
+  FEED_HALTED = 3;             // feed stopped by health watchdog; no prices, market state invalid
 }
 
 enum QuoteAction {

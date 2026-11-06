@@ -3,6 +3,8 @@
 #include "market_data.pb.h"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
+#include "sequence_tracker.hpp"
+#include "tob_validator.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -16,7 +18,9 @@ void BenchmarkResult::print() const {
         << " measured_msgs=" << measured_msgs
         << " measured_seconds=" << measured_seconds
         << " throughput_msgs_per_sec=" << throughput_msgs_per_sec
-        << " drops=" << drops;
+        << " drops=" << drops
+        << " validate=" << (validated ? "on" : "off")
+        << " rejected=" << rejected;
     log_utils::log_to_stream(std::cout, oss.str());
 
     std::ostringstream lat;
@@ -32,8 +36,9 @@ void BenchmarkResult::print() const {
     log_utils::log_to_stream(std::cout, lat.str());
 }
 
-BenchmarkResult Benchmark::run(MarketDataSource& src) {
+BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
     BenchmarkResult r{};
+    r.validated = validate;
     const auto start = std::chrono::steady_clock::now();
     const auto warmup_end = start + warmup_seconds;
     const auto measure_end = warmup_end + measure_seconds;
@@ -50,10 +55,16 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
     std::vector<uint64_t> strat_samples;
     strat_samples.reserve(250000);
     TobRingBuffer q;
+    TobValidator validator; // replay stubs carry no expected symbol
+    SequenceTracker seq_tracker;
 
     std::thread ingest([&] {
         hft::TopOfBook tob;
         while (src.next(tob)) {
+            // Validation sits before the measurement bookkeeping so its cost lands in e2e_ns
+            if (validate && (validator.validate(tob) != TobReject::None || !seq_accepted(seq_tracker.check(tob)))) {
+                continue;
+            }
             auto now = std::chrono::steady_clock::now();
             if (!measure_started.load() && now >= warmup_end) {
                 measure_start = now;
@@ -67,6 +78,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
                 }
             }
 
+            tob.set_feed_status(hft::FEED_OK); // keeps the strategy on its normal decision path
             if (!q.push(tob)) {
                 if (measure_started.load()) {
                     ++drops;
@@ -122,6 +134,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src) {
         r.throughput_msgs_per_sec = (r.measured_seconds > 0) ? (static_cast<double>(r.measured_msgs) / r.measured_seconds) : 0.0;
         r.drops = drops;
         r.serialize_errs = serialize_errs;
+        r.rejected = validator.rejected_total() + seq_tracker.rejected_total();
 
         std::sort(e2e_samples.begin(), e2e_samples.end());
         std::sort(strat_samples.begin(), strat_samples.end());
