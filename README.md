@@ -110,8 +110,8 @@ Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links 
 ```bash
 ./build/hft --help
 
-# Live feed (default symbol: dashbtc)
-./build/hft --source live --symbol dashbtc
+# Live feed (default symbol: btcusdt)
+./build/hft --source live --symbol btcusdt
 
 # Replay (stub ticks, loops indefinitely)
 ./build/hft --source replay

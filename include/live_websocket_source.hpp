@@ -31,7 +31,7 @@ class LiveWebSocketSource : public MarketDataSource {
 
     static constexpr const char* k_btcusdt = "btcusdt";
     static constexpr const char* k_dashbtc = "dashbtc";
-    static constexpr const char* k_default_symbol = k_dashbtc;
+    static constexpr const char* k_default_symbol = k_btcusdt;
     static constexpr const char* k_binance_ws_base_endpoint = "wss://stream.binance.com:9443/ws/";
     static constexpr const char* k_stream = "@bookTicker";
     std::string symbol_;

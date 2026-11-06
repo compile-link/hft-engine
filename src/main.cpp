@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     try {
         CurlGlobalGuard curl_guard; // process-scope, init and cleanup
         std::optional<std::string> source = std::nullopt;
-        std::string symbol = "dashbtc";
+        std::string symbol = "btcusdt";
         std::optional<double> threshold = std::nullopt;
 
         bool bench = false;
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
                 oss << "Usage: " << argv[0] << " [options]\n\n"
                     << "Options:\n"
                     << "  --source <live|replay>   Data feed [live]\n"
-                    << "  --symbol <symbol>        Symbol for live feed [dashbtc]\n"
+                    << "  --symbol <symbol>        Symbol for live feed [btcusdt]\n"
                     << "  --threshold <value>      Spread threshold (live:[0.0000007], replay:[1.0])\n"
                     << "  --max-no-valid-ms <ms>   Stop if no valid tick for this long [10000]\n"
                     << "  --startup-grace-ms <ms>  Time allowed for the first valid tick [15000]\n"
