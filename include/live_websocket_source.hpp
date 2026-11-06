@@ -24,7 +24,6 @@ class LiveWebSocketSource : public MarketDataSource {
     bool connect();
     bool subscribe();
     bool read_message(std::string& msg);
-    bool parse_to_tob(const std::string& msg, hft::TopOfBook& out);
     void reconnect_with_backoff();
     void close();
     void report_with_interval();

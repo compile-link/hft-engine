@@ -33,6 +33,7 @@ add_executable(hft
   src/source_factory.cpp
   src/replay_source.cpp
   src/live_websocket_source.cpp
+  src/book_ticker_parse.cpp
   src/tob_ring_buffer.cpp
   src/tob_validator.cpp
   src/feed_health.cpp

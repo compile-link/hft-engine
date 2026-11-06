@@ -6,6 +6,8 @@ add_executable(hft_tests
   decimal_parse_test.cpp
   feed_health_test.cpp
   sequence_tracker_test.cpp
+  book_ticker_parse_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/book_ticker_parse.cpp
   ${CMAKE_SOURCE_DIR}/src/sequence_tracker.cpp
   ${CMAKE_SOURCE_DIR}/src/feed_health.cpp
   ${CMAKE_SOURCE_DIR}/src/tob_validator.cpp

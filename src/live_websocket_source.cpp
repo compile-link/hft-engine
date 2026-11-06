@@ -1,9 +1,8 @@
 #include "live_websocket_source.hpp"
-#include "decimal_parse.hpp"
+#include "book_ticker_parse.hpp"
 #include "log_utils.hpp"
 #include "time_utils.hpp"
 #include <chrono>
-#include <nlohmann/json.hpp>
 #include <ostream>
 #include <sstream>
 #include <thread>
@@ -35,7 +34,7 @@ bool LiveWebSocketSource::next(hft::TopOfBook& out) {
         }
         stats_.recv++;
 
-        if (!parse_to_tob(msg, out)) {
+        if (!book_ticker::parse(msg, time_utils::now_ns(), out)) {
             log_utils::log_to_stream(std::cerr, "[live] parse error");
             stats_.parse_err++;
             activity_.last_parse_err_ns.store(time_utils::now_ns(), std::memory_order_relaxed);
@@ -127,36 +126,6 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
         if (msg_finished) {
             return !msg.empty();
         }
-    }
-}
-
-bool LiveWebSocketSource::parse_to_tob(const std::string& msg, hft::TopOfBook& out) {
-    using nlohmann::json;
-    json j;
-    try {
-        j = json::parse(msg);
-
-        const std::string symbol = j.at("s").get<std::string>();        // symbol
-        const double bid_px = decimal_parse::parse_decimal(j.at("b").get<std::string>()); // best bid price
-        const double bid_qty = decimal_parse::parse_decimal(j.at("B").get<std::string>()); // best bid qty
-        const double ask_px = decimal_parse::parse_decimal(j.at("a").get<std::string>());  // best ask price
-        const double ask_qty = decimal_parse::parse_decimal(j.at("A").get<std::string>()); // best ask qty
-        const uint64_t update_id = j.at("u").get<uint64_t>();           // order book updateId
-
-        // Value checks (finite, positive, not crossed, symbol) are done by TobValidator
-
-        out.set_symbol(symbol);
-        out.set_bid_px(bid_px);
-        out.set_bid_qty(bid_qty);
-        out.set_ask_px(ask_px);
-        out.set_ask_qty(ask_qty);
-        out.set_exchange_ts_ns(0);
-        out.set_recv_ts_ns(time_utils::now_ns());
-        out.set_sequence(update_id);
-
-        return true;
-    } catch (...) {
-        return false;
     }
 }
 
