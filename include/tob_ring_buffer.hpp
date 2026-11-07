@@ -1,9 +1,9 @@
 #pragma once
 
 #include "market_data.pb.h"
+#include <array>
 #include <atomic>
 #include <cstddef>
-#include <array>
 
 class TobRingBuffer {
   public:

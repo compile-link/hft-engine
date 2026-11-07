@@ -61,10 +61,10 @@ TEST(BookTickerParse, ClearsFieldsFromReusedMessage) {
 
 TEST(BookTickerParse, LeavesValueChecksToValidator) {
     hft::TopOfBook t;
-    EXPECT_TRUE(parse(with("b", R"("0")"), 1, t));      // non-positive
-    EXPECT_TRUE(parse(with("b", R"("nan")"), 1, t));    // non-finite
+    EXPECT_TRUE(parse(with("b", R"("0")"), 1, t));   // non-positive
+    EXPECT_TRUE(parse(with("b", R"("nan")"), 1, t)); // non-finite
     EXPECT_TRUE(std::isnan(t.bid_px()));
-    EXPECT_TRUE(parse(with("a", R"("1.0")"), 1, t));    // crossed
+    EXPECT_TRUE(parse(with("a", R"("1.0")"), 1, t)); // crossed
 }
 
 // --- Rejected: structure ---

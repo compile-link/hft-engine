@@ -4,10 +4,10 @@
 #include "market_data.pb.h"
 #include "replay_source.hpp"
 #include "runtime/curl_global_guard.hpp"
+#include "sequence_tracker.hpp"
 #include "source_factory.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
-#include "sequence_tracker.hpp"
 #include "tob_validator.hpp"
 #include <atomic>
 #include <chrono>

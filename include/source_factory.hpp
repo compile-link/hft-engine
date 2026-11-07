@@ -1,7 +1,7 @@
 #pragma once
 
-#include "replay_source.hpp"
 #include "market_data_source.hpp"
+#include "replay_source.hpp"
 #include <memory>
 #include <string>
 

@@ -60,8 +60,7 @@ bool ReplaySource::next(hft::TopOfBook& out) {
     if (cfg_.loop && idx_ >= k_mock_ticks.size()) {
         idx_ = 0;
         session_++;
-    }
-    else if (idx_ >= k_mock_ticks.size())
+    } else if (idx_ >= k_mock_ticks.size())
         return false;
 
     if (replay_end_) {
