@@ -146,12 +146,47 @@ library during generated-message destruction.
 
 ## Continuous integration
 
-* `.github/workflows/ci.yml` — on every push to `main` and every pull request:
-  clang-format check, Rust fmt/clippy/test, and a build plus CTest run for the
-  `debug` and `release` presets.
-* `.github/workflows/nightly.yml` — nightly: the `asan-ubsan` and `tsan`
-  presets, running both the unit tests and a benchmark-mode pipeline run.
-  Suppression files live in `.github/sanitizers/`.
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+| Job | What it checks |
+| --- | --- |
+| `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` |
+| `tidy` | `clang-tidy` on lines changed by the PR (`scripts/tidy.sh`) |
+| `docker` | Builds the image end to end and smoke-tests the binary |
+| `build-test` | Builds and runs CTest for the `debug` and `release` presets |
+
+`.github/workflows/nightly.yml` runs the `asan-ubsan` and `tsan` presets
+nightly, covering both the unit tests and a benchmark-mode pipeline run.
+Suppression files live in `.github/sanitizers/`.
+
+### Local equivalents
+
+```bash
+scripts/format.sh --check        # same check as the format job
+scripts/format.sh                # reformat in place
+scripts/tidy.sh                  # changed lines vs origin/main
+scripts/tidy.sh --all            # whole tree (not enforced by CI)
+```
+
+`clang-tidy` runs against changed lines only. The existing code has not been
+audited, so a full-tree gate would fail from the start and end up ignored;
+checking the lines a change touches keeps the gate actionable. Both scripts
+pin their tool version, because diagnostics differ between releases.
+
+### Dependency updates
+
+Dependabot (`.github/dependabot.yml`) proposes weekly updates for Cargo
+crates, GitHub Actions and the Docker base image. The vcpkg baseline has no
+Dependabot support and is bumped with:
+
+```bash
+scripts/update-vcpkg-baseline.sh            # latest vcpkg release
+scripts/update-vcpkg-baseline.sh 2026.10.16 # a specific release
+```
+
+That script updates `vcpkg.json` and the `Dockerfile` together; the Docker
+build fails if the two ever disagree.
 
 ## Run
 
