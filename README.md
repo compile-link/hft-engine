@@ -126,6 +126,33 @@ Rust strategy tests: `cd strategy_engine && cargo test`.
 
 Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links only the Protobuf library and the code under test, not the Rust module or libcurl.
 
+### Sanitizers
+
+```bash
+scripts/dev.sh asan-ubsan --test   # AddressSanitizer + UndefinedBehaviorSanitizer
+scripts/dev.sh tsan --test         # ThreadSanitizer
+```
+
+The unit tests are single-threaded and never touch the SPSC ring buffer, so a
+sanitizer run should also exercise the real ingest/process thread pair:
+
+```bash
+./build/tsan/hft --bench
+```
+
+Use the vcpkg presets for this. Against a distro-provided libprotobuf,
+AddressSanitizer reports a spurious crash inside the uninstrumented shared
+library during generated-message destruction.
+
+## Continuous integration
+
+* `.github/workflows/ci.yml` — on every push to `main` and every pull request:
+  clang-format check, Rust fmt/clippy/test, and a build plus CTest run for the
+  `debug` and `release` presets.
+* `.github/workflows/nightly.yml` — nightly: the `asan-ubsan` and `tsan`
+  presets, running both the unit tests and a benchmark-mode pipeline run.
+  Suppression files live in `.github/sanitizers/`.
+
 ## Run
 
 ```bash

@@ -1,0 +1,5 @@
+# LeakSanitizer suppressions.
+# One-time allocations in third-party libraries that are never freed
+# (e.g. OpenSSL/curl global init) belong here, not leaks in our own code.
+
+# leak:curl_global_init

@@ -1,0 +1,52 @@
+name: Set up build environment
+description: >
+  Installs the pinned Rust toolchain and checks out vcpkg at the baseline
+  recorded in vcpkg.json, with a cached binary store for built dependencies.
+
+inputs:
+  cache-key:
+    description: Extra component for the vcpkg binary cache key (e.g. the preset).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      shell: bash
+      run: rustup toolchain install && rustc --version && cargo --version
+
+    - name: Cache cargo registry and build artifacts
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          strategy_engine/target
+        key: cargo-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
+        restore-keys: cargo-${{ inputs.cache-key }}-${{ runner.os }}-
+
+    - name: Set up vcpkg at pinned baseline
+      shell: bash
+      run: |
+        # The baseline is read from vcpkg.json so there is one place to bump it.
+        VCPKG_ROOT="$RUNNER_TEMP/vcpkg"
+        VCPKG_ARCHIVES="$RUNNER_TEMP/vcpkg-archives"
+        baseline=$(jq -r '."builtin-baseline"' vcpkg.json)
+        echo "vcpkg baseline: $baseline"
+        git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+        git -C "$VCPKG_ROOT" checkout --quiet "$baseline"
+        "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+        mkdir -p "$VCPKG_ARCHIVES"
+        {
+          echo "VCPKG_ROOT=$VCPKG_ROOT"
+          echo "VCPKG_ARCHIVES=$VCPKG_ARCHIVES"
+          echo "VCPKG_DISABLE_METRICS=1"
+          echo "VCPKG_BINARY_SOURCES=clear;files,$VCPKG_ARCHIVES,readwrite"
+        } >> "$GITHUB_ENV"
+
+    - name: Restore vcpkg binary cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.VCPKG_ARCHIVES }}
+        key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-${{ runner.os }}-

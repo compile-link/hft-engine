@@ -1,0 +1,89 @@
+name: Nightly sanitizers
+
+on:
+  schedule:
+    # 03:17 UTC daily. Off the hour to avoid GitHub's scheduling peak.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  # Also run when the sanitizer configuration itself changes, so a broken
+  # setup is caught on the PR rather than at 03:17.
+  pull_request:
+    paths:
+      - '.github/workflows/nightly.yml'
+      - '.github/sanitizers/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    # Sanitized builds are several times slower than a normal build.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: asan-ubsan
+            description: AddressSanitizer + UndefinedBehaviorSanitizer
+          - preset: tsan
+            description: ThreadSanitizer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-build-env
+        with:
+          cache-key: ${{ matrix.preset }}
+
+      - name: Configure sanitizer runtime options
+        run: |
+          supp="$GITHUB_WORKSPACE/.github/sanitizers"
+          {
+            echo "ASAN_OPTIONS=abort_on_error=1:detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1"
+            echo "LSAN_OPTIONS=suppressions=$supp/lsan.supp"
+            # UBSan prints and continues by default; make a report fail the job.
+            echo "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1:suppressions=$supp/ubsan.supp"
+            # Dependencies come from vcpkg and are not instrumented, so TSan
+            # cannot see locking inside them; suppress what that produces.
+            echo "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:suppressions=$supp/tsan.supp"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -j"$(nproc)"
+
+      - name: Unit tests
+        run: ctest --preset ${{ matrix.preset }}
+
+      # The unit tests are single-threaded and never touch the SPSC ring
+      # buffer. Benchmark mode runs the real ingest/process thread pair over
+      # the replay source, which is the code TSan exists to check here.
+      - name: Pipeline run (replay source, both threads)
+        run: |
+          set -o pipefail
+          ./build/${{ matrix.preset }}/hft --bench 2>&1 | tee bench.log
+          # Sanitizers may report without changing the exit code in some
+          # configurations, so fail on the reports themselves too.
+          if grep -qE "ERROR: (Address|Thread|Leak)Sanitizer|runtime error:|WARNING: ThreadSanitizer" bench.log; then
+            echo "::error::${{ matrix.description }} reported an issue during the pipeline run"
+            exit 1
+          fi
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sanitizer-logs-${{ matrix.preset }}
+          path: |
+            bench.log
+            build/${{ matrix.preset }}/Testing/**/*.log
+          if-no-files-found: ignore

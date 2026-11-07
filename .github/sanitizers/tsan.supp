@@ -1,0 +1,11 @@
+# ThreadSanitizer suppressions.
+#
+# Dependencies come from vcpkg and are built without instrumentation, so TSan
+# cannot see synchronisation inside them and may report races it cannot prove
+# safe. Suppress only third-party frames here.
+#
+# NEVER suppress a frame in src/ or include/ -- in a lock-free ring buffer a
+# TSan report is far more likely to be a real bug than a false positive.
+# Add an entry only with a comment saying why it is safe.
+
+# called_from_lib:libcrypto.so

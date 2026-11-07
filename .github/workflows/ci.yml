@@ -67,49 +67,12 @@ jobs:
       fail-fast: false
       matrix:
         preset: [debug, release]
-    env:
-      VCPKG_DISABLE_METRICS: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Use the baseline from vcpkg.json so there is exactly one place to bump it.
-      - name: Set up vcpkg at pinned baseline
-        run: |
-          # VCPKG_ARCHIVES holds prebuilt dependency binaries, persisted by actions/cache.
-          VCPKG_ROOT="$RUNNER_TEMP/vcpkg"
-          VCPKG_ARCHIVES="$RUNNER_TEMP/vcpkg-archives"
-          baseline=$(jq -r '."builtin-baseline"' vcpkg.json)
-          echo "vcpkg baseline: $baseline"
-          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" checkout --quiet "$baseline"
-          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          mkdir -p "$VCPKG_ARCHIVES"
-          {
-            echo "VCPKG_ROOT=$VCPKG_ROOT"
-            echo "VCPKG_ARCHIVES=$VCPKG_ARCHIVES"
-            echo "VCPKG_BINARY_SOURCES=clear;files,$VCPKG_ARCHIVES,readwrite"
-          } >> "$GITHUB_ENV"
-
-      - name: Restore vcpkg binary cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/setup-build-env
         with:
-          path: ${{ env.VCPKG_ARCHIVES }}
-          key: vcpkg-${{ runner.os }}-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-${{ matrix.preset }}-
-            vcpkg-${{ runner.os }}-
-
-      - name: Install Rust toolchain
-        run: rustup toolchain install && rustc --version
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            strategy_engine/target
-          key: cargo-build-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
-          restore-keys: cargo-build-${{ runner.os }}-
+          cache-key: build
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
@@ -120,11 +83,11 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
-      - name: Upload vcpkg logs on failure
+      - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: vcpkg-logs-${{ matrix.preset }}
+          name: logs-${{ matrix.preset }}
           path: |
             ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
             build/${{ matrix.preset }}/vcpkg-manifest-install.log
