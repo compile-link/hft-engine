@@ -1,0 +1,6 @@
+# Pins the Rust toolchain for every developer and CI run.
+# Bump deliberately; `rust-version` in strategy_engine/Cargo.toml should not exceed this.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

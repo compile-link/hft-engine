@@ -2,6 +2,8 @@
 name = "strategy_engine"
 version = "0.1.0"
 edition = "2021"
+# Minimum supported toolchain. Must stay <= the channel in //rust-toolchain.toml.
+rust-version = "1.99"
 
 [lib]
 crate-type = ["staticlib"]

@@ -1,0 +1,89 @@
+# syntax=docker/dockerfile:1.7
+#
+# Reproducible build environment for hft-engine.
+#
+# Stages:
+#   toolchain - OS packages, Rust (pinned by rust-toolchain.toml), vcpkg at the
+#               baseline pinned in vcpkg.json. Use as a dev/CI environment.
+#   deps      - C++ dependencies from vcpkg.json, prebuilt into /opt/vcpkg_installed.
+#               Only invalidated when vcpkg.json changes.
+#   build     - configures, builds and tests the project with a preset.
+#   runtime   - minimal image containing only the hft binary.
+#
+# Usage:
+#   docker build -t hft-engine .                          # runtime image (runs tests)
+#   docker build --target build --build-arg PRESET=release -t hft-engine:build .
+#   docker build --target toolchain -t hft-engine:toolchain .
+
+ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+
+# ---------------------------------------------------------------------------
+FROM ${UBUNTU_IMAGE} AS toolchain
+
+# Must match "builtin-baseline" in vcpkg.json (checked at build time below).
+ARG VCPKG_COMMIT=9eec002df1cd109f8f104cd966a763daf9751489
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    VCPKG_ROOT=/opt/vcpkg \
+    VCPKG_DISABLE_METRICS=1 \
+    RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo \
+    PATH=/opt/cargo/bin:/opt/vcpkg:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config \
+        git curl ca-certificates zip unzip tar \
+        perl autoconf automake libtool linux-libc-dev \
+        clang-format clang-tidy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust: install rustup without a default toolchain; the exact toolchain comes
+# from rust-toolchain.toml so there is one source of truth for the version.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --no-modify-path --profile minimal --default-toolchain none
+COPY rust-toolchain.toml /tmp/rust/rust-toolchain.toml
+RUN cd /tmp/rust && rustup toolchain install && rustc --version && rm -rf /tmp/rust
+
+# vcpkg at the pinned baseline commit.
+RUN git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" \
+    && git -C "$VCPKG_ROOT" checkout --quiet "$VCPKG_COMMIT" \
+    && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+# ---------------------------------------------------------------------------
+FROM toolchain AS deps
+
+ARG VCPKG_COMMIT=9eec002df1cd109f8f104cd966a763daf9751489
+WORKDIR /src
+COPY vcpkg.json ./
+RUN grep -q "\"builtin-baseline\": \"${VCPKG_COMMIT}\"" vcpkg.json \
+        || { echo "vcpkg.json baseline does not match VCPKG_COMMIT=${VCPKG_COMMIT}" >&2; exit 1; }
+RUN vcpkg install --x-install-root=/opt/vcpkg_installed --x-feature=tests \
+    && rm -rf "$VCPKG_ROOT/buildtrees" "$VCPKG_ROOT/packages" "$VCPKG_ROOT/downloads"
+
+# Prefetch Rust crates (pinned by Cargo.lock) so source edits don't refetch them.
+COPY strategy_engine/Cargo.toml strategy_engine/Cargo.lock strategy_engine/
+RUN cd strategy_engine && cargo fetch --locked
+
+# ---------------------------------------------------------------------------
+FROM deps AS build
+
+ARG PRESET=relwithdebinfo
+COPY . .
+# Reuse the prebuilt dependencies instead of reinstalling into the build dir.
+RUN cmake --preset "${PRESET}" -DVCPKG_INSTALLED_DIR=/opt/vcpkg_installed \
+    && cmake --build --preset "${PRESET}" -j"$(nproc)" \
+    && ctest --preset "${PRESET}" \
+    && cp "build/${PRESET}/hft" /usr/local/bin/hft
+
+# ---------------------------------------------------------------------------
+FROM ${UBUNTU_IMAGE} AS runtime
+
+# Dependencies are linked statically (vcpkg x64-linux triplet); only libc,
+# libstdc++ and CA certificates (for the TLS WebSocket feed) are needed.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --no-create-home hft
+COPY --from=build /usr/local/bin/hft /usr/local/bin/hft
+USER hft
+ENTRYPOINT ["/usr/local/bin/hft"]
+CMD ["--help"]

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "hft-engine",
+  "version-string": "0.1.0",
+  "description": "HFT engine prototype: C++ market-data pipeline with a Rust strategy module.",
+  "homepage": "https://github.com/compileit/hft-engine",
+  "builtin-baseline": "9eec002df1cd109f8f104cd966a763daf9751489",
+  "dependencies": [
+    "abseil",
+    {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "ssl",
+        "websockets"
+      ]
+    },
+    "nlohmann-json",
+    "protobuf"
+  ],
+  "features": {
+    "tests": {
+      "description": "Dependencies required to build the unit tests (HFT_BUILD_TESTS=ON).",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  }
+}
