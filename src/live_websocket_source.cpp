@@ -60,7 +60,7 @@ bool LiveWebSocketSource::connect() {
     }
 
     curl_easy_setopt(curl_, CURLOPT_URL, url_.c_str());
-    curl_easy_setopt(curl_, CURLOPT_CONNECT_ONLY, 2L); // WebSocket connect-only mode
+    curl_easy_setopt(curl_, CURLOPT_CONNECT_ONLY, 2L);         // WebSocket connect-only mode
     curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT_MS, 5000L); // Bound connect time so stop requests are honored
 
     const CURLcode rc = curl_easy_perform(curl_); // Open WebSocket connection

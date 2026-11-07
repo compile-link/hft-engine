@@ -66,7 +66,7 @@ TEST(TobValidator, RejectsEmptySymbolEvenWhenExpectedSet) {
 TEST(TobValidator, RejectsSymbolMismatch) {
     TobValidator v(std::string("btcusdt"));
     EXPECT_EQ(v.validate(make_tob("ETHUSDT")), TobReject::SymbolMismatch);
-    EXPECT_EQ(v.validate(make_tob("BTCUSD")), TobReject::SymbolMismatch);  // prefix
+    EXPECT_EQ(v.validate(make_tob("BTCUSD")), TobReject::SymbolMismatch);   // prefix
     EXPECT_EQ(v.validate(make_tob("BTCUSDTX")), TobReject::SymbolMismatch); // longer
 }
 

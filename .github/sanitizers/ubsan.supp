@@ -1,0 +1,2 @@
+# UndefinedBehaviorSanitizer suppressions.
+# Keep empty: UB in our own code must be fixed, not suppressed.

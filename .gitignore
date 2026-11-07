@@ -4,4 +4,6 @@
 *.o
 compile_commands.json
 /strategy_engine/target
-/strategy_engine/Cargo.lock
+# strategy_engine/Cargo.lock is intentionally tracked: the crate is linked into a
+# binary, so its dependency versions must be reproducible.
+CMakeUserPresets.json

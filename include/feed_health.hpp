@@ -15,8 +15,8 @@ enum class FeedStopReason {
 const char* feed_stop_reason_to_str(FeedStopReason r);
 
 struct FeedHealthConfig {
-    std::chrono::milliseconds max_no_valid{10000};   // stop if no valid tick for this long
-    std::chrono::milliseconds startup_grace{15000};  // window for the first valid tick (connect + subscribe)
+    std::chrono::milliseconds max_no_valid{10000};  // stop if no valid tick for this long
+    std::chrono::milliseconds startup_grace{15000}; // window for the first valid tick (connect + subscribe)
 };
 
 // Point-in-time view of feed activity; all timestamps steady-clock ns, 0 = never

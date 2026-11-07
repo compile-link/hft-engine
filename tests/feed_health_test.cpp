@@ -20,7 +20,9 @@ namespace {
         return s;
     }
 
-    uint64_t t(uint64_t offset_ms) { return k_start + offset_ms * k_ms; }
+    uint64_t t(uint64_t offset_ms) {
+        return k_start + offset_ms * k_ms;
+    }
 } // namespace
 
 // --- Startup grace ---

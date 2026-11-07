@@ -18,7 +18,9 @@ enum class SeqResult : std::size_t {
 };
 
 const char* seq_result_to_str(SeqResult r);
-inline bool seq_accepted(SeqResult r) { return r == SeqResult::InOrder || r == SeqResult::SessionStart; }
+inline bool seq_accepted(SeqResult r) {
+    return r == SeqResult::InOrder || r == SeqResult::SessionStart;
+}
 
 // Per-symbol continuity check on TopOfBook::sequence within a source session.
 // A session change (reconnect, replay loop) resets the baseline: IDs across a

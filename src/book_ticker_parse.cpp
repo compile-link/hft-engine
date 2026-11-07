@@ -16,7 +16,7 @@ namespace book_ticker {
                 return false;
             }
 
-            const std::string symbol = j.at("s").get<std::string>();                          // symbol
+            const std::string symbol = j.at("s").get<std::string>();                           // symbol
             const double bid_px = decimal_parse::parse_decimal(j.at("b").get<std::string>());  // best bid price
             const double bid_qty = decimal_parse::parse_decimal(j.at("B").get<std::string>()); // best bid qty
             const double ask_px = decimal_parse::parse_decimal(j.at("a").get<std::string>());  // best ask price

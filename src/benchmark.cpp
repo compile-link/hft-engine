@@ -1,9 +1,9 @@
 #include "benchmark.hpp"
 #include "log_utils.hpp"
 #include "market_data.pb.h"
+#include "sequence_tracker.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
-#include "sequence_tracker.hpp"
 #include "tob_validator.hpp"
 #include <algorithm>
 #include <atomic>

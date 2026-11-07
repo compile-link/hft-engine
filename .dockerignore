@@ -1,0 +1,9 @@
+.git
+build/
+strategy_engine/target/
+vcpkg_installed/
+compile_commands.json
+CMakeUserPresets.json
+.vscode/
+Dockerfile
+.dockerignore

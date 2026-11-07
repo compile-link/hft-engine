@@ -44,7 +44,7 @@ In normal mode these are logged at a rate-limited 1s interval. In benchmark mode
 ## Benchmark Mode
 
 ```bash
-./build/hft --bench
+./build/debug/hft --bench
 ```
 
 Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`.
@@ -78,52 +78,135 @@ Diagnostics are logged every 5 seconds (cumulative and delta). Signals and laten
 
 ## Build
 
+All configurations live in `CMakePresets.json` — presets are the single source of
+truth shared by the dev script, CI and the IDE. Run `cmake --list-presets` to see them.
+
+**Pinned dependencies (recommended).** C++ dependencies are resolved from the
+`vcpkg.json` manifest, locked to a vcpkg baseline commit, so every machine builds
+the same versions:
+
 ```bash
-cmake -S . -B build
-cmake --build build -j
+export VCPKG_ROOT=/path/to/vcpkg      # https://github.com/microsoft/vcpkg
+cmake --preset debug
+cmake --build --preset debug -j
 # or
-scripts/dev.sh
+scripts/dev.sh debug
 ```
 
-**Dependencies:**
-* CMake 3.10+
+**System-provided dependencies.** If you would rather use your distro's packages,
+use the `sys-*` presets, which skip vcpkg entirely:
+
+```bash
+scripts/dev.sh sys-debug
+```
+
+Build output goes to `build/<preset>/`. `scripts/dev.sh` additionally symlinks the
+active `compile_commands.json` into the repo root for clang-tidy and editors.
+
+**Toolchain requirements:**
+* CMake 3.25+
 * C++17 (GCC/Clang)
-* Protobuf
-* libcurl
-* Rust + Cargo
-* nlohmann/json
-* GoogleTest (tests only; disable with `-DHFT_BUILD_TESTS=OFF`)
+* Rust + Cargo — version pinned by `rust-toolchain.toml`; `rustup` picks it up
+  automatically. Crate versions are pinned by the tracked `strategy_engine/Cargo.lock`
+  and the build runs `cargo build --locked`.
+
+**Libraries** (pinned via `vcpkg.json`, or install yourself for the `sys-*` presets):
+Protobuf, abseil, libcurl (with WebSocket support), nlohmann/json, and GoogleTest
+(tests only; disable with `-DHFT_BUILD_TESTS=OFF`).
 
 ## Test
 
 ```bash
-cmake --build build -j
-ctest --test-dir build --output-on-failure
+ctest --preset debug
+# or build and test in one step
+scripts/dev.sh debug --test
 ```
 
 Rust strategy tests: `cd strategy_engine && cargo test`.
 
 Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links only the Protobuf library and the code under test, not the Rust module or libcurl.
 
+### Sanitizers
+
+```bash
+scripts/dev.sh asan-ubsan --test   # AddressSanitizer + UndefinedBehaviorSanitizer
+scripts/dev.sh tsan --test         # ThreadSanitizer
+```
+
+The unit tests are single-threaded and never touch the SPSC ring buffer, so a
+sanitizer run should also exercise the real ingest/process thread pair:
+
+```bash
+./build/tsan/hft --bench
+```
+
+Use the vcpkg presets for this. Against a distro-provided libprotobuf,
+AddressSanitizer reports a spurious crash inside the uninstrumented shared
+library during generated-message destruction.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+| Job | What it checks |
+| --- | --- |
+| `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` |
+| `tidy` | `clang-tidy` on lines changed by the PR (`scripts/tidy.sh`) |
+| `docker` | Builds the image end to end and smoke-tests the binary |
+| `build-test` | Builds and runs CTest for the `debug` and `release` presets |
+
+`.github/workflows/nightly.yml` runs the `asan-ubsan` and `tsan` presets
+nightly, covering both the unit tests and a benchmark-mode pipeline run.
+Suppression files live in `.github/sanitizers/`.
+
+### Local equivalents
+
+```bash
+scripts/format.sh --check        # same check as the format job
+scripts/format.sh                # reformat in place
+scripts/tidy.sh                  # changed lines vs origin/main
+scripts/tidy.sh --all            # whole tree (not enforced by CI)
+```
+
+`clang-tidy` runs against changed lines only. The existing code has not been
+audited, so a full-tree gate would fail from the start and end up ignored;
+checking the lines a change touches keeps the gate actionable. Both scripts
+pin their tool version, because diagnostics differ between releases.
+
+### Dependency updates
+
+Dependabot (`.github/dependabot.yml`) proposes weekly updates for Cargo
+crates, GitHub Actions and the Docker base image. The vcpkg baseline has no
+Dependabot support and is bumped with:
+
+```bash
+scripts/update-vcpkg-baseline.sh            # latest vcpkg release
+scripts/update-vcpkg-baseline.sh 2026.10.16 # a specific release
+```
+
+That script updates `vcpkg.json` and the `Dockerfile` together; the Docker
+build fails if the two ever disagree.
+
 ## Run
 
 ```bash
-./build/hft --help
+./build/debug/hft --help
 
 # Live feed (default symbol: btcusdt)
-./build/hft --source live --symbol btcusdt
+./build/debug/hft --source live --symbol btcusdt
 
 # Replay (stub ticks, loops indefinitely)
-./build/hft --source replay
+./build/debug/hft --source replay
 
 # Custom spread threshold
-./build/hft --threshold 0.01
+./build/debug/hft --threshold 0.01
 
 # Benchmark mode
-./build/hft --bench
+./build/debug/hft --bench
 
 # Feed health limits (stop conditions)
-./build/hft --max-no-valid-ms 10000 --startup-grace-ms 15000
+./build/debug/hft --max-no-valid-ms 10000 --startup-grace-ms 15000
 ```
 
 **Feed health.** Outside benchmark mode, a watchdog stops the pipeline if no valid tick arrives within `--max-no-valid-ms` (default 10s), or within `--startup-grace-ms` (default 15s) before the first one. The stop is logged with a reason and exits with code `2`:

@@ -13,7 +13,7 @@ add_executable(hft_tests
   ${CMAKE_SOURCE_DIR}/src/tob_validator.cpp
 )
 target_include_directories(hft_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(hft_tests PRIVATE hft_proto GTest::gtest_main)
+target_link_libraries(hft_tests PRIVATE hft_proto GTest::gtest_main nlohmann_json::nlohmann_json)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(hft_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()

@@ -1,0 +1,118 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "HFT_BUILD_TESTS": "ON",
+        "HFT_ENABLE_WARNINGS": "ON"
+      }
+    },
+    {
+      "name": "vcpkg",
+      "hidden": true,
+      "inherits": "base",
+      "description": "Resolve C++ dependencies from the pinned vcpkg manifest. Requires VCPKG_ROOT.",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "vcpkg",
+      "displayName": "Debug (vcpkg)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "vcpkg",
+      "displayName": "Release (vcpkg)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "inherits": "vcpkg",
+      "displayName": "RelWithDebInfo (vcpkg) - release artifact build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "inherits": "vcpkg",
+      "displayName": "Debug + AddressSanitizer + UndefinedBehaviorSanitizer",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "HFT_ENABLE_ASAN": "ON",
+        "HFT_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "vcpkg",
+      "displayName": "Debug + ThreadSanitizer (ring buffer / threading checks)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "HFT_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "sys-debug",
+      "inherits": "base",
+      "displayName": "Debug (system-provided dependencies, no vcpkg)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "sys-release",
+      "inherits": "base",
+      "displayName": "Release (system-provided dependencies, no vcpkg)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "sys-debug", "configurePreset": "sys-debug" },
+    { "name": "sys-release", "configurePreset": "sys-release" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    { "name": "debug", "inherits": "base", "configurePreset": "debug" },
+    { "name": "release", "inherits": "base", "configurePreset": "release" },
+    { "name": "relwithdebinfo", "inherits": "base", "configurePreset": "relwithdebinfo" },
+    { "name": "asan-ubsan", "inherits": "base", "configurePreset": "asan-ubsan" },
+    { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
+    { "name": "sys-debug", "inherits": "base", "configurePreset": "sys-debug" },
+    { "name": "sys-release", "inherits": "base", "configurePreset": "sys-release" }
+  ]
+}
