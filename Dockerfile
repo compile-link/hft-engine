@@ -39,10 +39,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Rust: install rustup without a default toolchain; the exact toolchain comes
 # from rust-toolchain.toml so there is one source of truth for the version.
+# The file must stay at /src: no default toolchain is configured, so rustup
+# resolves the version from this file for every cargo invocation in /src and
+# below (including /src/strategy_engine).
+WORKDIR /src
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --no-modify-path --profile minimal --default-toolchain none
-COPY rust-toolchain.toml /tmp/rust/rust-toolchain.toml
-RUN cd /tmp/rust && rustup toolchain install && rustc --version && rm -rf /tmp/rust
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install && rustc --version && cargo --version
 
 # vcpkg at the pinned baseline commit.
 RUN git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" \
@@ -61,8 +65,12 @@ RUN vcpkg install --x-install-root=/opt/vcpkg_installed --x-feature=tests \
     && rm -rf "$VCPKG_ROOT/buildtrees" "$VCPKG_ROOT/packages" "$VCPKG_ROOT/downloads"
 
 # Prefetch Rust crates (pinned by Cargo.lock) so source edits don't refetch them.
+# Cargo must be able to parse the manifest, which declares a lib target, so a
+# stub lib.rs is needed here; the build stage overwrites it with the real source.
 COPY strategy_engine/Cargo.toml strategy_engine/Cargo.lock strategy_engine/
-RUN cd strategy_engine && cargo fetch --locked
+RUN mkdir -p strategy_engine/src \
+    && touch strategy_engine/src/lib.rs \
+    && cd strategy_engine && cargo fetch --locked
 
 # ---------------------------------------------------------------------------
 FROM deps AS build
