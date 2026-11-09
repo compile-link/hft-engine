@@ -151,7 +151,7 @@ library during generated-message destruction.
 | Job | What it checks |
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
-| `actionlint` | Workflow files (`scripts/actionlint.sh`, pinned version) |
+| `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`) |
 | `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end and smoke-tests the binary |
@@ -182,12 +182,14 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
 scripts/tidy.sh                  # same check as the tidy job
-scripts/actionlint.sh            # same check as the actionlint job
+scripts/actionlint.sh            # workflows, incl. their run: steps
+scripts/shellcheck.sh            # *.sh and composite action steps
+scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)
 ```
 
 `clang-tidy` checks the whole tree, so a finding anywhere fails the gate, not
-only in lines a change touches. Both scripts pin their tool version, because
-diagnostics differ between releases.
+only in lines a change touches. Every script pins its tool version (and, for
+release binaries, the SHA-256), because diagnostics differ between releases.
 
 ### Dependency updates
 
