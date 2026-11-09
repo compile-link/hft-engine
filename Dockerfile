@@ -20,9 +20,6 @@ ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949
 # ---------------------------------------------------------------------------
 FROM ${UBUNTU_IMAGE} AS toolchain
 
-# Must match "builtin-baseline" in vcpkg.json (checked at build time below).
-ARG VCPKG_COMMIT=9eec002df1cd109f8f104cd966a763daf9751489
-
 ENV DEBIAN_FRONTEND=noninteractive \
     VCPKG_ROOT=/opt/vcpkg \
     VCPKG_DISABLE_METRICS=1 \
@@ -51,19 +48,16 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 COPY rust-toolchain.toml ./
 RUN rustup toolchain install && rustc --version && cargo --version
 
-# vcpkg at the pinned baseline commit.
-RUN git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" \
-    && git -C "$VCPKG_ROOT" checkout --quiet "$VCPKG_COMMIT" \
-    && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+# vcpkg at the baseline from vcpkg.json, via the same script as local and CI
+# builds.
+COPY vcpkg.json ./
+COPY scripts/setup-vcpkg.sh scripts/
+RUN scripts/setup-vcpkg.sh --root "$VCPKG_ROOT"
 
 # ---------------------------------------------------------------------------
 FROM toolchain AS deps
 
-ARG VCPKG_COMMIT=9eec002df1cd109f8f104cd966a763daf9751489
 WORKDIR /src
-COPY vcpkg.json ./
-RUN grep -q "\"builtin-baseline\": \"${VCPKG_COMMIT}\"" vcpkg.json \
-        || { echo "vcpkg.json baseline does not match VCPKG_COMMIT=${VCPKG_COMMIT}" >&2; exit 1; }
 RUN vcpkg install --x-install-root=/opt/vcpkg_installed --x-feature=tests \
     && rm -rf "$VCPKG_ROOT/buildtrees" "$VCPKG_ROOT/packages" "$VCPKG_ROOT/downloads"
 

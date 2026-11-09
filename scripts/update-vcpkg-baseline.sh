@@ -6,9 +6,10 @@ set -euo pipefail
 #   scripts/update-vcpkg-baseline.sh              latest vcpkg release tag
 #   scripts/update-vcpkg-baseline.sh 2026.10.16   a specific release tag
 #
-# Updates vcpkg.json and the VCPKG_COMMIT defaults in the Dockerfile, which
-# must agree. Review and test the result: a baseline bump moves every C++
-# dependency at once.
+# Updates "builtin-baseline" in vcpkg.json, the only place the commit is
+# recorded; scripts/setup-vcpkg.sh reads it for local builds, CI and Docker.
+# Review and test the result: a baseline bump moves every C++ dependency at
+# once.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -45,17 +46,10 @@ assert n == 1, f"expected exactly one builtin-baseline, found {n}"
 open(p, "w").write(s2)
 PY
 
-# Keep the Dockerfile's VCPKG_COMMIT defaults in sync (the deps stage verifies
-# they match vcpkg.json at build time).
-sed -i "s/^ARG VCPKG_COMMIT=.*/ARG VCPKG_COMMIT=${SHA}/" Dockerfile
-
-changed=$(grep -c "^ARG VCPKG_COMMIT=${SHA}$" Dockerfile || true)
-echo "Dockerfile VCPKG_COMMIT occurrences updated: $changed"
-
 cat <<EOF
 
 Done. Next:
-  1. Review:  git diff vcpkg.json Dockerfile
-  2. Rebuild: VCPKG_ROOT=... scripts/dev.sh debug --test
+  1. Review:  git diff vcpkg.json
+  2. Rebuild: scripts/dev.sh debug --test   (moves the managed vcpkg to the new baseline)
   3. Commit with the release tag ($TAG) in the message.
 EOF

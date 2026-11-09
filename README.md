@@ -86,12 +86,19 @@ truth shared by the dev script, CI and the IDE. Run `cmake --list-presets` to se
 the same versions:
 
 ```bash
-export VCPKG_ROOT=/path/to/vcpkg      # https://github.com/microsoft/vcpkg
+scripts/dev.sh debug
+# or, driving CMake directly:
+export VCPKG_ROOT="$(scripts/setup-vcpkg.sh)"
 cmake --preset debug
 cmake --build --preset debug -j
-# or
-scripts/dev.sh debug
 ```
+
+`scripts/setup-vcpkg.sh` is the only place vcpkg is installed: `dev.sh`, CI and
+the Dockerfile all call it. It checks out vcpkg at the `builtin-baseline` commit
+from `vcpkg.json` into `~/.cache/hft-engine/vcpkg` and bootstraps it. Re-running
+it only verifies the checkout; after a baseline bump it moves the checkout to the
+new commit. It never modifies a directory it did not create, so a personal vcpkg
+checkout is left alone, and `dev.sh` ignores any `VCPKG_ROOT` already set.
 
 **System-provided dependencies.** If you would rather use your distro's packages,
 use the `sys-*` presets, which skip vcpkg entirely:
@@ -202,8 +209,7 @@ scripts/update-vcpkg-baseline.sh            # latest vcpkg release
 scripts/update-vcpkg-baseline.sh 2026.10.16 # a specific release
 ```
 
-That script updates `vcpkg.json` and the `Dockerfile` together; the Docker
-build fails if the two ever disagree.
+That script updates `vcpkg.json` only. The baseline is recorded nowhere else.
 
 ## Run
 
