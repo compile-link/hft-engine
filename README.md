@@ -151,6 +151,7 @@ library during generated-message destruction.
 | Job | What it checks |
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
+| `actionlint` | Workflow files (`scripts/actionlint.sh`, pinned version) |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`) |
 | `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end and smoke-tests the binary |
@@ -181,6 +182,7 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
 scripts/tidy.sh                  # same check as the tidy job
+scripts/actionlint.sh            # same check as the actionlint job
 ```
 
 `clang-tidy` checks the whole tree, so a finding anywhere fails the gate, not
