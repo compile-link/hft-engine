@@ -60,14 +60,11 @@ jobs:
       - run: cargo test --locked
 
   tidy:
-    name: clang-tidy (changed lines)
+    name: clang-tidy
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history so the merge-base with the target branch is available.
-          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
@@ -82,11 +79,10 @@ jobs:
           cmake --preset debug
           cmake --build --preset debug --target hft_proto -j"$(nproc)"
 
-      - name: Run clang-tidy on changed lines
+      - name: Run clang-tidy on the whole tree
         env:
           TIDY_BUILD_DIR: build/debug
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: scripts/tidy.sh --base "$BASE_REF"
+        run: scripts/tidy.sh
 
   docker:
     name: Docker image

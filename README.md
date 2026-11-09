@@ -152,7 +152,7 @@ library during generated-message destruction.
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`) |
-| `tidy` | `clang-tidy` on lines changed by the PR (`scripts/tidy.sh`) |
+| `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end and smoke-tests the binary |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
 
@@ -180,14 +180,12 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.
 ```bash
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
-scripts/tidy.sh                  # changed lines vs origin/main
-scripts/tidy.sh --all            # whole tree (not enforced by CI)
+scripts/tidy.sh                  # same check as the tidy job
 ```
 
-`clang-tidy` runs against changed lines only. The existing code has not been
-audited, so a full-tree gate would fail from the start and end up ignored;
-checking the lines a change touches keeps the gate actionable. Both scripts
-pin their tool version, because diagnostics differ between releases.
+`clang-tidy` checks the whole tree, so a finding anywhere fails the gate, not
+only in lines a change touches. Both scripts pin their tool version, because
+diagnostics differ between releases.
 
 ### Dependency updates
 

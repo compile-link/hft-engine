@@ -32,7 +32,7 @@
         "required_status_checks": [
           { "context": "Format (clang-format)", "integration_id": 15368 },
           { "context": "Rust (fmt, clippy, test)", "integration_id": 15368 },
-          { "context": "clang-tidy (changed lines)", "integration_id": 15368 },
+          { "context": "clang-tidy", "integration_id": 15368 },
           { "context": "Docker image", "integration_id": 15368 },
           { "context": "Build & test (debug)", "integration_id": 15368 },
           { "context": "Build & test (release)", "integration_id": 15368 }
