@@ -160,6 +160,21 @@ library during generated-message destruction.
 nightly, covering both the unit tests and a benchmark-mode pipeline run.
 Suppression files live in `.github/sanitizers/`.
 
+### Branch protection
+
+`main` is protected by a repository ruleset whose definition is kept in
+`.github/rulesets/main.json`: changes land only through a squash-merged pull
+request with every `ci.yml` job green against the current `main`, all review
+threads resolved, and no force-pushes or branch deletion. The nightly workflow
+is not required, since it does not run on most pull requests. There are no
+bypass actors, so the rules also apply to the repository owner. The file is
+not applied automatically; after editing it, push it to GitHub with:
+
+```bash
+id=$(gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.name=="main") | .id')
+gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json
+```
+
 ### Local equivalents
 
 ```bash
