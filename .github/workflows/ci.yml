@@ -37,23 +37,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # prost-build needs protoc. The full CMake build uses the vcpkg-pinned one;
-      # here the distro protoc is enough to generate code for lint and unit tests.
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
-
-      # Installs exactly the version from rust-toolchain.toml.
-      - name: Install Rust toolchain
-        run: rustup toolchain install && rustc --version
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/setup-build-env
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            strategy_engine/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
-          restore-keys: cargo-lint-${{ runner.os }}-
+          cache-key: lint
+
+      # prost-build shells out to protoc. Use the vcpkg-pinned one, exactly as
+      # the CMake build does (see strategy_engine_build in CMakeLists.txt), so
+      # the generated Rust code matches what the C++ side was built against.
+      # Only the default manifest features are installed; "tests" (gtest) is
+      # not needed here. Binaries come from the shared vcpkg cache.
+      - name: Install pinned protoc via vcpkg
+        working-directory: ${{ github.workspace }}
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --x-manifest-root="$GITHUB_WORKSPACE" \
+            --x-install-root="$RUNNER_TEMP/vcpkg_installed"
+          protoc="$RUNNER_TEMP/vcpkg_installed/x64-linux/tools/protobuf/protoc"
+          "$protoc" --version
+          echo "PROTOC=$protoc" >> "$GITHUB_ENV"
 
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings

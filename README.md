@@ -151,7 +151,7 @@ library during generated-message destruction.
 | Job | What it checks |
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
-| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`) |
 | `tidy` | `clang-tidy` on lines changed by the PR (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end and smoke-tests the binary |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
