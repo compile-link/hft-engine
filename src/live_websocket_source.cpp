@@ -76,10 +76,17 @@ bool LiveWebSocketSource::subscribe() {
     return true;
 }
 
+namespace {
+    // curl_ws_frame::flags and the CURLWS_* bits are int; test them as unsigned.
+    bool has_flag(int flags, int bit) {
+        return (static_cast<unsigned>(flags) & static_cast<unsigned>(bit)) != 0U;
+    }
+} // namespace
+
 bool LiveWebSocketSource::read_message(std::string& msg) {
     msg.clear();
     msg.reserve(8192);
-    static constexpr size_t k_max_msg = 256 * 1024;
+    static constexpr size_t k_max_msg = size_t{256} * 1024;
     char buf[8192];
 
     while (true) {
@@ -103,13 +110,13 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
         }
         // Any frame (incl. ping/pong) proves the connection is alive
         activity_.last_frame_ns.store(time_utils::now_ns(), std::memory_order_relaxed);
-        if (meta->flags & CURLWS_CLOSE) {
+        if (has_flag(meta->flags, CURLWS_CLOSE)) {
             return false;
         }
-        if (meta->flags & CURLWS_PING) {
+        if (has_flag(meta->flags, CURLWS_PING)) {
             continue;
         }
-        if (meta->flags & CURLWS_PONG) {
+        if (has_flag(meta->flags, CURLWS_PONG)) {
             continue;
         }
 
@@ -121,7 +128,7 @@ bool LiveWebSocketSource::read_message(std::string& msg) {
         }
 
         const bool frame_finished = (meta->bytesleft == 0);
-        const bool msg_finished = frame_finished && !(meta->flags & CURLWS_CONT);
+        const bool msg_finished = frame_finished && !has_flag(meta->flags, CURLWS_CONT);
 
         if (msg_finished) {
             return !msg.empty();
@@ -167,7 +174,7 @@ void LiveWebSocketSource::report_with_interval() {
     oss << "Diagnostics:"
         << " dt_ms=" << dt_ms
         << " recv=" << stats_.recv
-        << " recv_rate[msg/s]=" << (dt_ms > 0 ? (recv_delta * 1000 / dt_ms) : 0)
+        << " recv_rate[msg/s]=" << (dt_ms > 0 ? (recv_delta * 1000 / static_cast<uint64_t>(dt_ms)) : 0)
         << " parse_ok=" << stats_.parse_ok
         << " d_parse_ok=" << ok_delta
         << " parse_err=" << stats_.parse_err
