@@ -24,23 +24,34 @@ namespace {
         return t;
     }
 
-    std::vector<hft::TopOfBook> k_mock_ticks = {
-        make_tob("BTCUSDT", 100.00, 100.80, 1.0, 1.0, 1'000'000, 1'000'100, 1),
-        make_tob("BTCUSDT", 100.00, 101.00, 1.0, 1.0, 1'000'200, 1'000'300, 2),
-        make_tob("BTCUSDT", 100.20, 101.40, 1.2, 0.9, 1'000'400, 1'000'500, 3),
-        make_tob("BTCUSDT", 100.50, 101.49, 1.1, 1.1, 1'000'600, 1'000'700, 4),
-        make_tob("BTCUSDT", 100.75, 101.75, 0.8, 1.3, 1'000'800, 1'000'900, 5)};
+    // Built on first use rather than at static initialization, where an
+    // exception (e.g. bad_alloc) could not be caught.
+    const std::vector<hft::TopOfBook>& base_ticks() {
+        static const std::vector<hft::TopOfBook> ticks = {
+            make_tob("BTCUSDT", 100.00, 100.80, 1.0, 1.0, 1'000'000, 1'000'100, 1),
+            make_tob("BTCUSDT", 100.00, 101.00, 1.0, 1.0, 1'000'200, 1'000'300, 2),
+            make_tob("BTCUSDT", 100.20, 101.40, 1.2, 0.9, 1'000'400, 1'000'500, 3),
+            make_tob("BTCUSDT", 100.50, 101.49, 1.1, 1.1, 1'000'600, 1'000'700, 4),
+            make_tob("BTCUSDT", 100.75, 101.75, 0.8, 1.3, 1'000'800, 1'000'900, 5)};
+        return ticks;
+    }
 
+    const std::vector<hft::TopOfBook>& mock_ticks() {
 #ifdef HFT_PROFILE
-    static std::vector<hft::TopOfBook> k_ticks_expanded = [] {
-        std::vector<hft::TopOfBook> v;
-        v.reserve(k_mock_ticks.size() * 100);
-        for (int i = 0; i < 10; ++i) {
-            v.insert(v.end(), k_mock_ticks.begin(), k_mock_ticks.end());
-        }
-        return v;
-    }();
+        static const std::vector<hft::TopOfBook> expanded = [] {
+            const auto& base = base_ticks();
+            std::vector<hft::TopOfBook> v;
+            v.reserve(base.size() * 100);
+            for (int i = 0; i < 10; ++i) {
+                v.insert(v.end(), base.begin(), base.end());
+            }
+            return v;
+        }();
+        return expanded;
+#else
+        return base_ticks();
 #endif
+    }
 } // namespace
 
 ReplaySource::ReplaySource(ReplayConfig cfg) : cfg_(cfg) {
@@ -50,9 +61,7 @@ ReplaySource::ReplaySource(ReplayConfig cfg) : cfg_(cfg) {
 }
 
 bool ReplaySource::next(hft::TopOfBook& out) {
-#ifdef HFT_PROFILE
-    static auto k_mock_ticks = k_ticks_expanded;
-#endif
+    const auto& k_mock_ticks = mock_ticks();
     if (stop_requested() || k_mock_ticks.empty()) {
         return false;
     }

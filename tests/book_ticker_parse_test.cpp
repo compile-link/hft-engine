@@ -6,7 +6,8 @@
 using book_ticker::parse;
 
 namespace {
-    const std::string k_valid =
+    // A plain char array: a static std::string could throw before main().
+    constexpr const char k_valid[] =
         R"({"u":400900217,"s":"BNBUSDT","b":"25.35190000","B":"31.21000000","a":"25.36520000","A":"40.66000000"})";
 
     // Build a message from the valid one with a single field's raw JSON value replaced
@@ -73,7 +74,7 @@ TEST(BookTickerParse, RejectsMalformedJson) {
     hft::TopOfBook t;
     EXPECT_FALSE(parse("", 1, t));
     EXPECT_FALSE(parse("{", 1, t));
-    EXPECT_FALSE(parse(k_valid.substr(0, k_valid.size() - 1), 1, t));
+    EXPECT_FALSE(parse(std::string(k_valid).substr(0, sizeof(k_valid) - 2), 1, t));
     EXPECT_FALSE(parse("not json", 1, t));
 }
 

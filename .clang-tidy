@@ -1,7 +1,12 @@
 ---
+# bugprone-easily-swappable-parameters is off: it flags every function taking
+# several same-typed values (prices, quantities, timestamps), which is most of
+# this codebase. Fixing it means strong types throughout, a design change
+# rather than a lint fix.
 Checks: >
   clang-analyzer-*,
-  bugprone-*
+  bugprone-*,
+  -bugprone-easily-swappable-parameters
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(src|include)/'
 ExcludeHeaderFilterRegex: '^(build|generated|strategy_engine)/'
