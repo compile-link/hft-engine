@@ -1,7 +1,8 @@
 name: Set up build environment
 description: >
-  Installs the pinned Rust toolchain and checks out vcpkg at the baseline
-  recorded in vcpkg.json, with a cached binary store for built dependencies.
+  Installs the pinned Rust toolchain and sets up vcpkg at the baseline
+  recorded in vcpkg.json (scripts/setup-vcpkg.sh), with a cached binary
+  store for built dependencies.
 
 inputs:
   cache-key:
@@ -25,17 +26,30 @@ runs:
         key: cargo-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
         restore-keys: cargo-${{ inputs.cache-key }}-${{ runner.os }}-
 
+    - name: Read vcpkg baseline
+      id: baseline
+      shell: bash
+      run: echo "sha=$(scripts/setup-vcpkg.sh --baseline)" >> "$GITHUB_OUTPUT"
+
+    # The bootstrapped checkout is cached per baseline, so the bootstrap
+    # download (which has failed with a 504 before) normally does not run.
+    - name: Restore vcpkg checkout
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/vcpkg
+        key: vcpkg-tool-${{ runner.os }}-${{ steps.baseline.outputs.sha }}
+
+    # Same script as local builds and the Dockerfile. On a cache hit it only
+    # verifies the checkout.
     - name: Set up vcpkg at pinned baseline
       shell: bash
+      run: scripts/setup-vcpkg.sh --root "$RUNNER_TEMP/vcpkg"
+
+    - name: Export vcpkg environment
+      shell: bash
       run: |
-        # The baseline is read from vcpkg.json so there is one place to bump it.
         VCPKG_ROOT="$RUNNER_TEMP/vcpkg"
         VCPKG_ARCHIVES="$RUNNER_TEMP/vcpkg-archives"
-        baseline=$(jq -r '."builtin-baseline"' vcpkg.json)
-        echo "vcpkg baseline: $baseline"
-        git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-        git -C "$VCPKG_ROOT" checkout --quiet "$baseline"
-        "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
         mkdir -p "$VCPKG_ARCHIVES"
         {
           echo "VCPKG_ROOT=$VCPKG_ROOT"

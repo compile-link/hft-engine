@@ -86,12 +86,19 @@ truth shared by the dev script, CI and the IDE. Run `cmake --list-presets` to se
 the same versions:
 
 ```bash
-export VCPKG_ROOT=/path/to/vcpkg      # https://github.com/microsoft/vcpkg
+scripts/dev.sh debug
+# or, driving CMake directly:
+export VCPKG_ROOT="$(scripts/setup-vcpkg.sh)"
 cmake --preset debug
 cmake --build --preset debug -j
-# or
-scripts/dev.sh debug
 ```
+
+`scripts/setup-vcpkg.sh` is the only place vcpkg is installed: `dev.sh`, CI and
+the Dockerfile all call it. It checks out vcpkg at the `builtin-baseline` commit
+from `vcpkg.json` into `~/.cache/hft-engine/vcpkg` and bootstraps it. Re-running
+it only verifies the checkout; after a baseline bump it moves the checkout to the
+new commit. It never modifies a directory it did not create, so a personal vcpkg
+checkout is left alone, and `dev.sh` ignores any `VCPKG_ROOT` already set.
 
 **System-provided dependencies.** If you would rather use your distro's packages,
 use the `sys-*` presets, which skip vcpkg entirely:
@@ -151,28 +158,60 @@ library during generated-message destruction.
 | Job | What it checks |
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
-| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` |
-| `tidy` | `clang-tidy` on lines changed by the PR (`scripts/tidy.sh`) |
-| `docker` | Builds the image end to end and smoke-tests the binary |
+| `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
+| `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
+| `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
 
 `.github/workflows/nightly.yml` runs the `asan-ubsan` and `tsan` presets
 nightly, covering both the unit tests and a benchmark-mode pipeline run.
-Suppression files live in `.github/sanitizers/`.
+Suppression files live in `.github/sanitizers/`. It also re-runs `cargo audit`
+and the Trivy image scan, because new advisories appear for code that has not
+changed.
+
+### Security scanning
+
+| Tool | Scope | Fails on | Accepted findings |
+| --- | --- | --- | --- |
+| `scripts/audit.sh` (cargo-audit) | Rust crates in `Cargo.lock` | vulnerabilities, yanked crates | `strategy_engine/.cargo/audit.toml` |
+| `scripts/trivy.sh <image>` | OS packages in the image | HIGH/CRITICAL with a fix available | `.trivyignore` |
+
+C++ dependencies are linked statically from vcpkg and carry no package
+metadata, so neither tool sees them. Their versions are fixed by the vcpkg
+baseline; bumping it is how they get security updates.
+
+### Branch protection
+
+`main` is protected by a repository ruleset whose definition is kept in
+`.github/rulesets/main.json`: changes land only through a squash-merged pull
+request with every `ci.yml` job green against the current `main`, all review
+threads resolved, and no force-pushes or branch deletion. The nightly workflow
+is not required, since it does not run on most pull requests. There are no
+bypass actors, so the rules also apply to the repository owner. The file is
+not applied automatically; after editing it, push it to GitHub with:
+
+```bash
+id=$(gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.name=="main") | .id')
+gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.json
+```
 
 ### Local equivalents
 
 ```bash
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
-scripts/tidy.sh                  # changed lines vs origin/main
-scripts/tidy.sh --all            # whole tree (not enforced by CI)
+scripts/tidy.sh                  # same check as the tidy job
+scripts/actionlint.sh            # workflows, incl. their run: steps
+scripts/shellcheck.sh            # *.sh and composite action steps
+scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)
+scripts/audit.sh                 # RustSec advisories for Cargo.lock
+scripts/trivy.sh hft-engine      # image scan (build the image first)
 ```
 
-`clang-tidy` runs against changed lines only. The existing code has not been
-audited, so a full-tree gate would fail from the start and end up ignored;
-checking the lines a change touches keeps the gate actionable. Both scripts
-pin their tool version, because diagnostics differ between releases.
+`clang-tidy` checks the whole tree, so a finding anywhere fails the gate, not
+only in lines a change touches. Every script pins its tool version (and, for
+release binaries, the SHA-256), because diagnostics differ between releases.
 
 ### Dependency updates
 
@@ -185,8 +224,7 @@ scripts/update-vcpkg-baseline.sh            # latest vcpkg release
 scripts/update-vcpkg-baseline.sh 2026.10.16 # a specific release
 ```
 
-That script updates `vcpkg.json` and the `Dockerfile` together; the Docker
-build fails if the two ever disagree.
+That script updates `vcpkg.json` only. The baseline is recorded nowhere else.
 
 ## Run
 

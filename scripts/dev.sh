@@ -7,7 +7,8 @@ set -euo pipefail # strict mode
 # Usage: scripts/dev.sh [preset] [--clean|-c] [--test|-t]
 #
 # Dependency-resolution presets:
-#   debug | release | relwithdebinfo | asan-ubsan | tsan   -> vcpkg (needs VCPKG_ROOT)
+#   debug | release | relwithdebinfo | asan-ubsan | tsan   -> vcpkg, set up by
+#                                                             scripts/setup-vcpkg.sh
 #   sys-debug | sys-release                                -> system-installed deps
 #
 # Run `cmake --list-presets` to see all of them.
@@ -25,7 +26,7 @@ for arg in "$@"; do
             RUN_TESTS=1
             ;;
         -h|--help)
-            sed -n '4,14p' "$0"
+            sed -n '4,15p' "$0"
             exit 0
             ;;
         -*)
@@ -50,11 +51,10 @@ fi
 case "$PRESET" in
     sys-*) ;;
     *)
-        if [[ -z "${VCPKG_ROOT:-}" ]]; then
-            echo "Preset '${PRESET}' resolves dependencies via vcpkg but VCPKG_ROOT is unset." >&2
-            echo "Either export VCPKG_ROOT, or use a 'sys-*' preset to build against system packages." >&2
-            exit 1
-        fi
+        # Always the project-managed vcpkg at the pinned baseline. An existing
+        # VCPKG_ROOT is not used: it may point at any vcpkg commit.
+        VCPKG_ROOT="$(scripts/setup-vcpkg.sh)"
+        export VCPKG_ROOT
         ;;
 esac
 

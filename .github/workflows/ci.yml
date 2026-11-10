@@ -27,6 +27,24 @@ jobs:
       # Version is pinned inside the script.
       - run: scripts/format.sh --check
 
+  lint-infra:
+    name: Lint infrastructure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # uv fetches pyyaml for extracting composite action steps.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      # Tool versions and checksums are pinned inside the scripts.
+      - name: actionlint (workflows)
+        run: scripts/actionlint.sh
+      - name: shellcheck (scripts, composite actions)
+        if: ${{ !cancelled() }}
+        run: scripts/shellcheck.sh
+      - name: hadolint (Dockerfile)
+        if: ${{ !cancelled() }}
+        run: scripts/hadolint.sh
+
   rust:
     name: Rust (fmt, clippy, test)
     runs-on: ubuntu-24.04
@@ -37,37 +55,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # prost-build needs protoc. The full CMake build uses the vcpkg-pinned one;
-      # here the distro protoc is enough to generate code for lint and unit tests.
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
-
-      # Installs exactly the version from rust-toolchain.toml.
-      - name: Install Rust toolchain
-        run: rustup toolchain install && rustc --version
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/setup-build-env
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            strategy_engine/target
-          key: cargo-lint-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
-          restore-keys: cargo-lint-${{ runner.os }}-
+          cache-key: lint
+
+      # prost-build shells out to protoc. Use the vcpkg-pinned one, exactly as
+      # the CMake build does (see strategy_engine_build in CMakeLists.txt), so
+      # the generated Rust code matches what the C++ side was built against.
+      # Only the default manifest features are installed; "tests" (gtest) is
+      # not needed here. Binaries come from the shared vcpkg cache.
+      - name: Install pinned protoc via vcpkg
+        working-directory: ${{ github.workspace }}
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --x-manifest-root="$GITHUB_WORKSPACE" \
+            --x-install-root="$RUNNER_TEMP/vcpkg_installed"
+          protoc="$RUNNER_TEMP/vcpkg_installed/x64-linux/tools/protobuf/protoc"
+          "$protoc" --version
+          echo "PROTOC=$protoc" >> "$GITHUB_ENV"
 
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      # RustSec advisories for Cargo.lock. Version pinned inside the script.
+      - name: cargo audit
+        working-directory: ${{ github.workspace }}
+        run: scripts/audit.sh
 
   tidy:
-    name: clang-tidy (changed lines)
+    name: clang-tidy
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history so the merge-base with the target branch is available.
-          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
@@ -82,11 +101,10 @@ jobs:
           cmake --preset debug
           cmake --build --preset debug --target hft_proto -j"$(nproc)"
 
-      - name: Run clang-tidy on changed lines
+      - name: Run clang-tidy on the whole tree
         env:
           TIDY_BUILD_DIR: build/debug
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: scripts/tidy.sh --base "$BASE_REF"
+        run: scripts/tidy.sh
 
   docker:
     name: Docker image
@@ -119,6 +137,21 @@ jobs:
             echo "::error::Replay run failed with exit code ${rc}"
             exit 1
           fi
+
+      # Trivy's vulnerability DB is refreshed upstream several times a day;
+      # caching it per day avoids hitting the registry on every job.
+      - name: Date for Trivy DB cache
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.day }}
+          restore-keys: trivy-db-
+
+      # Version pinned inside the script; it scans the OS packages of the image.
+      - name: Scan the image (Trivy)
+        run: scripts/trivy.sh hft-engine:ci
 
   build-test:
     name: Build & test (${{ matrix.preset }})

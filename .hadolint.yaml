@@ -1,0 +1,6 @@
+# hadolint configuration, run by scripts/hadolint.sh.
+ignored:
+  # Pinning apt package versions on Ubuntu is not reproducible: superseded
+  # versions are removed from the archive, so a pinned build breaks on the next
+  # rebuild. Reproducibility comes from the base image digest instead.
+  - DL3008

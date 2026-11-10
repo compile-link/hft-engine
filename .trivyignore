@@ -1,0 +1,3 @@
+# Accepted Trivy findings, read by scripts/trivy.sh.
+# One CVE ID per line, each with a comment giving the reason and a review date:
+#   CVE-YYYY-NNNNN  # reason; revisit YYYY-MM-DD
