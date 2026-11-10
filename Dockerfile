@@ -92,7 +92,10 @@ FROM ${UBUNTU_IMAGE} AS runtime
 
 # Dependencies are linked statically (vcpkg x64-linux triplet); only libc,
 # libstdc++ and CA certificates (for the TLS WebSocket feed) are needed.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# Upgrade first: the pinned base digest can lag behind Ubuntu security
+# updates, and this is the image that ships.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 hft \
     && useradd --system --uid 10001 --gid hft --no-create-home hft
