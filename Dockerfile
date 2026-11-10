@@ -43,6 +43,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # resolves the version from this file for every cargo invocation in /src and
 # below (including /src/strategy_engine).
 WORKDIR /src
+# Fail a RUN if any command in a pipe fails, not just the last one: otherwise
+# a failed rustup download piped into sh would go unnoticed.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --no-modify-path --profile minimal --default-toolchain none
 COPY rust-toolchain.toml ./
@@ -68,9 +71,10 @@ RUN vcpkg install --x-install-root=/opt/vcpkg_installed --x-feature=tests \
 # Cargo must be able to parse the manifest, which declares a lib target, so a
 # stub lib.rs is needed here; the build stage overwrites it with the real source.
 COPY strategy_engine/Cargo.toml strategy_engine/Cargo.lock strategy_engine/
-RUN mkdir -p strategy_engine/src \
-    && touch strategy_engine/src/lib.rs \
-    && cd strategy_engine && cargo fetch --locked
+RUN mkdir -p strategy_engine/src && touch strategy_engine/src/lib.rs
+WORKDIR /src/strategy_engine
+RUN cargo fetch --locked
+WORKDIR /src
 
 # ---------------------------------------------------------------------------
 FROM deps AS build
@@ -90,8 +94,11 @@ FROM ${UBUNTU_IMAGE} AS runtime
 # libstdc++ and CA certificates (for the TLS WebSocket feed) are needed.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --no-create-home hft
+    && groupadd --system --gid 10001 hft \
+    && useradd --system --uid 10001 --gid hft --no-create-home hft
 COPY --from=build /usr/local/bin/hft /usr/local/bin/hft
-USER hft
+# Numeric, so the user resolves without the image's /etc/passwd (e.g. under
+# Kubernetes runAsNonRoot checks).
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/hft"]
 CMD ["--help"]
