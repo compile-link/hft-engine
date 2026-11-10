@@ -159,14 +159,27 @@ library during generated-message destruction.
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile |
-| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`) |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
 | `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
-| `docker` | Builds the image end to end and smoke-tests the binary |
+| `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
 
 `.github/workflows/nightly.yml` runs the `asan-ubsan` and `tsan` presets
 nightly, covering both the unit tests and a benchmark-mode pipeline run.
-Suppression files live in `.github/sanitizers/`.
+Suppression files live in `.github/sanitizers/`. It also re-runs `cargo audit`
+and the Trivy image scan, because new advisories appear for code that has not
+changed.
+
+### Security scanning
+
+| Tool | Scope | Fails on | Accepted findings |
+| --- | --- | --- | --- |
+| `scripts/audit.sh` (cargo-audit) | Rust crates in `Cargo.lock` | vulnerabilities, yanked crates | `strategy_engine/.cargo/audit.toml` |
+| `scripts/trivy.sh <image>` | OS packages in the image | HIGH/CRITICAL with a fix available | `.trivyignore` |
+
+C++ dependencies are linked statically from vcpkg and carry no package
+metadata, so neither tool sees them. Their versions are fixed by the vcpkg
+baseline; bumping it is how they get security updates.
 
 ### Branch protection
 
@@ -192,6 +205,8 @@ scripts/tidy.sh                  # same check as the tidy job
 scripts/actionlint.sh            # workflows, incl. their run: steps
 scripts/shellcheck.sh            # *.sh and composite action steps
 scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)
+scripts/audit.sh                 # RustSec advisories for Cargo.lock
+scripts/trivy.sh hft-engine      # image scan (build the image first)
 ```
 
 `clang-tidy` checks the whole tree, so a finding anywhere fails the gate, not

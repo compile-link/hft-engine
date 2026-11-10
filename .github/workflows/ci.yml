@@ -76,6 +76,10 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      # RustSec advisories for Cargo.lock. Version pinned inside the script.
+      - name: cargo audit
+        working-directory: ${{ github.workspace }}
+        run: scripts/audit.sh
 
   tidy:
     name: clang-tidy
@@ -133,6 +137,21 @@ jobs:
             echo "::error::Replay run failed with exit code ${rc}"
             exit 1
           fi
+
+      # Trivy's vulnerability DB is refreshed upstream several times a day;
+      # caching it per day avoids hitting the registry on every job.
+      - name: Date for Trivy DB cache
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.day }}
+          restore-keys: trivy-db-
+
+      # Version pinned inside the script; it scans the OS packages of the image.
+      - name: Scan the image (Trivy)
+        run: scripts/trivy.sh hft-engine:ci
 
   build-test:
     name: Build & test (${{ matrix.preset }})
