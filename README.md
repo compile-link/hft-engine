@@ -35,10 +35,16 @@ MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> L
 
 ## Latency Instrumentation
 
-`recv_ts_ns` is stamped in the ingest thread immediately after a message is parsed from the wire. In the process thread, `t0` is stamped before the FFI call and `t1` after. This gives two independent measurements per message:
+Two spans are measured per message, with fixed start and stop points:
 
-- `e2e_ns = t1 - recv_ts_ns` - full pipeline latency: parse -> ring buffer transit -> serialize -> FFI call
-- `strat_ns = t1 - t0` - cost of the `rust_decide` FFI call only
+- `e2e_ns = t1 - recv_ts_ns` - ingest to completed signal.
+  - Start, `recv_ts_ns`: stamped in the ingest thread when the message reaches the engine. Live: taken right before the JSON frame is parsed (`LiveWebSocketSource::next`). Replay: taken after the pacing sleep, so simulated inter-tick gaps are not counted.
+  - Stop, `t1`: once the `StrategySignal` is built. Logging the signal is excluded - it is rate-limited I/O, not per-message pipeline work.
+  - Covers: parse (live only - replay emits prebuilt ticks), validation, ring buffer transit, serialize, `rust_decide`, `StrategySignal` construction.
+- `strat_ns = strat_end - t0` - the strategy entry point only.
+  - Start/stop: immediately around the `rust_decide` call, after serialization and before the signal is built.
+  - Covers: the C-ABI call into the statically linked Rust library (a few ns), Protobuf decode, and the decision logic. Decode stays in the span because it runs inside the strategy.
+
 In normal mode these are logged at a rate-limited 1s interval. In benchmark mode they are collected across the full measurement window and reported as percentiles.
 
 ## Benchmark Mode

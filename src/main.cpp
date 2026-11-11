@@ -261,16 +261,18 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
 
+                    // strat span: the strategy entry point only (see README "Latency Instrumentation")
                     auto t0 = time_utils::now_ns();
                     int32_t action = rust_decide(
                         reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+                    const auto strat_end = time_utils::now_ns();
 
-                    auto t1 = time_utils::now_ns();
                     hft::StrategySignal sig;
                     sig.set_symbol(tob.symbol());
                     sig.set_action(static_cast<hft::QuoteAction>(action));
                     sig.set_reason("spread_cond");
-                    sig.set_ts_ns(t1);
+                    sig.set_ts_ns(strat_end);       // decision time
+                    auto t1 = time_utils::now_ns(); // e2e stop: signal complete
 
                     auto now = std::chrono::steady_clock::now();
                     if (now - last_log >= std::chrono::seconds(1)) { // Limit logging rate
@@ -287,7 +289,7 @@ int main(int argc, char* argv[]) {
                         const auto e2e_ns = (recv_ns > 0) ? (t1 - recv_ns) : 0;
                         oss << "Latency:"
                             << " e2e_ns=" << e2e_ns
-                            << " strat_ns=" << t1 - t0;
+                            << " strat_ns=" << strat_end - t0;
                         log_utils::log_to_stream(std::cerr, oss.str());
                         last_log = now;
                     }

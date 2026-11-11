@@ -80,10 +80,9 @@ bool ReplaySource::next(hft::TopOfBook& out) {
 
     out = k_mock_ticks[idx_++];
     out.set_session(session_);
-    const auto t_ns = time_utils::now_ns();
-    out.set_recv_ts_ns(t_ns);
-
+    // Pacing models the gap before the next tick arrives; it is not engine latency, so stamp after it
     std::this_thread::sleep_for(cfg_.sleep_per_tick);
+    out.set_recv_ts_ns(time_utils::now_ns());
 
     return true;
 }

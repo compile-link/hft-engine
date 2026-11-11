@@ -71,7 +71,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
                 measure_started.store(true);
             }
             if (!measure_done.load()) {
-                if (std::chrono::steady_clock::now() > measure_end) {
+                if (now > measure_end) {
                     measure_done.store(true);
 
                     break;
@@ -104,23 +104,25 @@ BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
                 continue;
             }
 
+            // strat span: the strategy entry point only (see README "Latency Instrumentation")
             const auto t0_ns = time_utils::now_ns();
             int32_t action = rust_decide(
                 reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+            const auto strat_end_ns = time_utils::now_ns();
 
-            const auto t1_ns = time_utils::now_ns();
             hft::StrategySignal sig;
             sig.set_symbol(tob.symbol());
             sig.set_action(static_cast<hft::QuoteAction>(action));
             sig.set_reason("spread_cond");
-            sig.set_ts_ns(static_cast<uint64_t>(t1_ns));
+            sig.set_ts_ns(static_cast<uint64_t>(strat_end_ns)); // decision time
+            const auto t1_ns = time_utils::now_ns();            // e2e stop: signal complete
             if (measure_started.load() && !measure_done.load()) {
                 ++measured_msgs;
                 const uint64_t recv_ts_ns = tob.recv_ts_ns() > 0 ? tob.recv_ts_ns() : 0;
                 if (recv_ts_ns > 0 && t1_ns >= recv_ts_ns) {
                     e2e_samples.push_back(t1_ns - recv_ts_ns);
                 }
-                strat_samples.push_back(t1_ns - t0_ns);
+                strat_samples.push_back(strat_end_ns - t0_ns);
             }
         }
     });
