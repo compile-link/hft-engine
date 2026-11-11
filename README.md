@@ -55,7 +55,16 @@ In normal mode these are logged at a rate-limited 1s interval. In benchmark mode
 
 Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`.
 
-By default the benchmark ingest path skips `TobValidator`, so results stay comparable with earlier baselines. Pass `--bench-validate` to run the validator in the ingest thread as the live path does; its cost then lands in `e2e_ns`. The output records `validate=on|off`. Phases:
+The benchmark supports two configurations that measure different things. Run and report both:
+
+| Configuration | Flag | Measures | Use for |
+|---|---|---|---|
+| Pipeline (default) | - | Queue, serialize, strategy and signal, without validation | A stable series that data-validation changes don't move |
+| Live-like | `--bench-validate` | The pipeline plus `TobValidator` and sequence checks in the ingest thread, as live runs them | Numbers close to what live pays |
+
+The output records `validate=on|off`. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
+
+Phases:
 
 - **Warmup**: 3 seconds, samples discarded
 - **Measurement**: 20 seconds of samples collected per metric
