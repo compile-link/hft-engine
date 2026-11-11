@@ -1,11 +1,23 @@
 #pragma once
 
+#include "feed_health.hpp"
 #include "market_data_source.hpp"
 #include <chrono>
 #include <cstdint>
 
+// Live-path checks the benchmark can include. Each is switched separately in code;
+// the CLI exposes a single switch (--bench-live-checks) that sets all of them.
+struct BenchChecks {
+    bool validate = false; // TobValidator + SequenceTracker in the ingest thread
+    bool health = false;   // FeedHealthMonitor updates per message
+    bool watchdog = false; // watchdog thread evaluating health; requires health
+
+    static BenchChecks all(bool on) { return {on, on, on}; }
+};
+
 struct BenchmarkResult {
-    bool validated = false; // ingest ran TobValidator (mirrors the live path)
+    BenchChecks checks;
+    FeedStopReason watchdog_stop = FeedStopReason::None; // set if the watchdog ended the run early
     uint64_t rejected = 0;
     uint64_t measured_msgs = 0;
     double measured_seconds = 0.0;
@@ -20,7 +32,7 @@ struct BenchmarkResult {
 
 class Benchmark {
   public:
-    static BenchmarkResult run(MarketDataSource& src, bool validate);
+    static BenchmarkResult run(MarketDataSource& src, BenchChecks checks, FeedHealthConfig health_cfg);
 
   private:
     static constexpr std::chrono::seconds warmup_seconds{3};

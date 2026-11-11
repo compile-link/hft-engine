@@ -60,9 +60,9 @@ The benchmark supports two configurations that measure different things. Run and
 | Configuration | Flag | Measures | Use for |
 |---|---|---|---|
 | Pipeline (default) | - | Queue, serialize, strategy and signal, without validation | A stable series that data-validation changes don't move |
-| Live-like | `--bench-validate` | The pipeline plus `TobValidator` and sequence checks in the ingest thread, as live runs them | Numbers close to what live pays |
+| Live-like | `--bench-live-checks` | The pipeline plus the live checks: `TobValidator` and sequence checks, feed health updates in the ingest thread, and the watchdog thread | Numbers close to what live pays |
 
-The output records `validate=on|off`. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
+The output records `validate`, `health` and `watchdog` as `on|off`. The three are separate switches in code (`BenchChecks`); the CLI sets them together for now. If the watchdog stops a run early, the output adds `watchdog_stop=<reason>` and the results should be discarded. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
 
 Phases:
 
@@ -72,7 +72,7 @@ Phases:
 Reports on completion:
 
 ```
-Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=... validate=off rejected=0
+Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=... validate=off health=off watchdog=off rejected=0
 
 Benchmark Latency: e2e_p50_ns=... e2e_p99_ns=... e2e_p999_ns=... e2e_max_ns=... strat_p50_ns=... strat_p99_ns=... strat_p999_ns=... strat_max_ns=...
 ```

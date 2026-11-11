@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
         std::optional<double> threshold = std::nullopt;
 
         bool bench = false;
-        bool bench_validate = false;
+        bool bench_live_checks = false;
         ReplayConfig replayConfig;
         FeedHealthConfig healthConfig;
 
@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
                 replayConfig.sleep_per_tick = std::chrono::milliseconds(0);
                 replayConfig.max_runtime = std::nullopt;
             }
-            if (arg == "--bench-validate") {
-                bench_validate = true;
+            if (arg == "--bench-live-checks") {
+                bench_live_checks = true;
             }
             if (arg == "--help" || arg == "-h") {
                 std::ostringstream oss;
@@ -87,7 +87,8 @@ int main(int argc, char* argv[]) {
                     << "  --max-no-valid-ms <ms>   Stop if no valid tick for this long [10000]\n"
                     << "  --startup-grace-ms <ms>  Time allowed for the first valid tick [15000]\n"
                     << "  --bench                  Run benchmark mode (replay-only)\n"
-                    << "  --bench-validate         Run TobValidator in the benchmark ingest path [off]\n"
+                    << "  --bench-live-checks      Include live checks in the benchmark: validator,\n"
+                    << "                           health monitor and watchdog [off]\n"
                     << "  --help, -h               Print this help";
 
                 log_utils::log_to_stream(std::cout, oss.str());
@@ -95,8 +96,8 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
         }
-        if (bench_validate && !bench) {
-            throw std::invalid_argument("--bench-validate requires --bench");
+        if (bench_live_checks && !bench) {
+            throw std::invalid_argument("--bench-live-checks requires --bench");
         }
         if (bench) {
             if (source && *source != "replay") {
@@ -134,7 +135,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (bench) {
-            const BenchmarkResult r = Benchmark::run(*mds, bench_validate);
+            const BenchmarkResult r = Benchmark::run(*mds, BenchChecks::all(bench_live_checks), healthConfig);
             r.print();
         } else {
 

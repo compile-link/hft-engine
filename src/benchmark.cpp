@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <optional>
+#include <stdexcept>
 #include <thread>
 
 extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
@@ -19,8 +21,13 @@ void BenchmarkResult::print() const {
         << " measured_seconds=" << measured_seconds
         << " throughput_msgs_per_sec=" << throughput_msgs_per_sec
         << " drops=" << drops
-        << " validate=" << (validated ? "on" : "off")
+        << " validate=" << (checks.validate ? "on" : "off")
+        << " health=" << (checks.health ? "on" : "off")
+        << " watchdog=" << (checks.watchdog ? "on" : "off")
         << " rejected=" << rejected;
+    if (watchdog_stop != FeedStopReason::None) {
+        oss << " watchdog_stop=" << feed_stop_reason_to_str(watchdog_stop);
+    }
     log_utils::log_to_stream(std::cout, oss.str());
 
     std::ostringstream lat;
@@ -36,9 +43,12 @@ void BenchmarkResult::print() const {
     log_utils::log_to_stream(std::cout, lat.str());
 }
 
-BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
+BenchmarkResult Benchmark::run(MarketDataSource& src, BenchChecks checks, FeedHealthConfig health_cfg) {
+    if (checks.watchdog && !checks.health) {
+        throw std::invalid_argument("benchmark watchdog requires the health monitor");
+    }
     BenchmarkResult r{};
-    r.validated = validate;
+    r.checks = checks;
     const auto start = std::chrono::steady_clock::now();
     const auto warmup_end = start + warmup_seconds;
     const auto measure_end = warmup_end + measure_seconds;
@@ -57,13 +67,24 @@ BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
     TobRingBuffer q;
     TobValidator validator; // replay stubs carry no expected symbol
     SequenceTracker seq_tracker;
+    std::optional<FeedHealthMonitor> health;
+    if (checks.health) {
+        health.emplace(health_cfg, time_utils::now_ns());
+    }
+    std::atomic<FeedStopReason> watchdog_stop{FeedStopReason::None};
 
     std::thread ingest([&] {
         hft::TopOfBook tob;
         while (src.next(tob)) {
-            // Validation sits before the measurement bookkeeping so its cost lands in e2e_ns
-            if (validate && (validator.validate(tob) != TobReject::None || !seq_accepted(seq_tracker.check(tob)))) {
+            // Checks sit before the measurement bookkeeping so their cost lands in e2e_ns
+            if (checks.validate && (validator.validate(tob) != TobReject::None || !seq_accepted(seq_tracker.check(tob)))) {
+                if (health) {
+                    health->on_rejected(time_utils::now_ns());
+                }
                 continue;
+            }
+            if (health) {
+                health->on_valid(time_utils::now_ns());
             }
             auto now = std::chrono::steady_clock::now();
             if (!measure_started.load() && now >= warmup_end) {
@@ -127,8 +148,33 @@ BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
         }
     });
 
+    // Same watchdog as the live path: stops the source if the feed goes unhealthy
+    std::thread watchdog;
+    if (checks.watchdog) {
+        watchdog = std::thread([&] {
+            while (!done.load()) {
+                const SourceActivity& act = src.activity();
+                const FeedHealthSnapshot snap = health->snapshot(
+                    time_utils::now_ns(),
+                    act.last_frame_ns.load(std::memory_order_relaxed),
+                    act.last_parse_err_ns.load(std::memory_order_relaxed));
+                const FeedStopReason reason = health->evaluate(snap);
+                if (reason != FeedStopReason::None) {
+                    watchdog_stop.store(reason);
+                    src.request_stop();
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        });
+    }
+
     ingest.join();
+    if (watchdog.joinable()) {
+        watchdog.join();
+    }
     process.join();
+    r.watchdog_stop = watchdog_stop.load();
 
     if (measure_started.load()) {
         r.measured_seconds = std::chrono::duration<double>(measure_end - measure_start).count();
