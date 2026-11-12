@@ -23,9 +23,11 @@ MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> L
   (ingest thread)                         (process thread)
 ```
 
+**Pipeline (`Pipeline`)** - the single implementation of the path above, used by normal runs and the benchmark alike. `PipelineConfig` switches the engine checks (validator and sequence tracking, feed health, watchdog); a `PipelineObserver` receives each message's span timestamps plus rejects, session starts and feed stops. Normal runs attach a `LogObserver` (the output below), the benchmark a sampling observer. Observer calls happen after `t1`, outside both spans. Modes differ only in source, config and observer - never in the measured path.
+
 **Ingest thread** - calls `MarketDataSource::next()` in a loop. On live mode, this blocks on `curl_ws_recv` until a WebSocket frame arrives, then parses the JSON payload into a `TopOfBook` and stamps `recv_ts_ns` immediately. On replay mode, it cycles through a fixed set of raw bookTicker JSON frames (the live stream's format) with configurable sleep between them, and parses each one with the same `book_ticker::parse` call as live. Pushes to the ring buffer; increments a drop counter on full.
 
-**Process thread** - pops `TopOfBook` from the ring buffer, serializes it to Protobuf bytes, calls `rust_decide()` via FFI, and logs the returned action as a `StrategySignal`. On empty buffer, yields and retries; exits when the ingest thread signals done.
+**Process thread** - pops `TopOfBook` from the ring buffer, serializes it to Protobuf bytes, calls `rust_decide()` via FFI, and builds a `StrategySignal` from the returned action, which the observer reports. On empty buffer, yields and retries; exits when the ingest thread signals done.
 
 **Ring buffer (`TobRingBuffer`)** - fixed capacity (1024 slots), `std::atomic` head and tail. `push` checks `next == tail` before writing; `pop` checks `tail == head` before reading. Returns `false` on full/empty rather than blocking.
 
@@ -277,7 +279,7 @@ Default thresholds if not specified: live `0.0000007`, replay `1.0`.
 ## Project Structure
 
 ```
-src/                    Pipeline implementation: main, threading, ingest, benchmark
+src/                    Pipeline implementation: pipeline, observers, sources, benchmark
 include/                Headers (ring buffer, sources, utilities)
 include/runtime/        Process-scope RAII guards (CurlGlobalGuard)
 proto/                  Protobuf schema: TopOfBook, StrategySignal, QuoteAction

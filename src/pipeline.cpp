@@ -36,16 +36,31 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
         while (src.next(tob)) {
             auto status = hft::FEED_OK;
             if (cfg_.validate) {
-                const bool valid = validator.validate(tob) == TobReject::None;
-                const SeqResult sr = valid ? seq_tracker.check(tob) : SeqResult::Count;
-                if (!valid || !seq_accepted(sr)) {
+                const TobReject rej = validator.validate(tob);
+                if (rej != TobReject::None) {
                     if (health) {
                         health->on_rejected(time_utils::now_ns());
+                    }
+                    if (observer_) {
+                        observer_->on_validation_reject(tob, rej, validator.rejected_total());
+                    }
+                    continue;
+                }
+                const SeqResult sr = seq_tracker.check(tob);
+                if (!seq_accepted(sr)) {
+                    if (health) {
+                        health->on_rejected(time_utils::now_ns());
+                    }
+                    if (observer_) {
+                        observer_->on_sequence_reject(tob, sr, seq_tracker.rejected_total());
                     }
                     continue;
                 }
                 if (sr == SeqResult::SessionStart) {
                     status = hft::FEED_SESSION_START;
+                    if (observer_) {
+                        observer_->on_session_start(tob);
+                    }
                 }
             }
             if (health) {
@@ -87,6 +102,9 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
                 const FeedStopReason r = health->evaluate(snap);
                 if (r != FeedStopReason::None) {
                     stop_reason.store(r);
+                    if (observer_) {
+                        observer_->on_feed_stop(r, snap);
+                    }
                     src.request_stop();
                     break;
                 }
@@ -127,7 +145,7 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             spans.t1_ns = time_utils::now_ns(); // e2e stop: signal complete
 
             if (observer_) {
-                observer_->on_message(spans);
+                observer_->on_message(sig, spans);
             }
         }
     });
@@ -142,6 +160,8 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
     stats.drops = drops;
     stats.serialize_errs = serialize_errs;
     stats.rejected = validator.rejected_total() + seq_tracker.rejected_total();
+    stats.validator_summary = validator.summary();
+    stats.sequence_summary = seq_tracker.summary();
     stats.stop_reason = stop_reason.load();
     return stats;
 }

@@ -21,7 +21,7 @@ namespace {
             strat_.reserve(250000);
         }
 
-        void on_message(const MessageSpans& s) override {
+        void on_message(const hft::StrategySignal&, const MessageSpans& s) override {
             if (s.t1_ns < start_ || s.t1_ns >= end_) {
                 return;
             }
