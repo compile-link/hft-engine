@@ -62,7 +62,7 @@ The benchmark supports two configurations that measure different things. Run and
 | Pipeline (default) | - | Queue, serialize, strategy and signal, without validation | A stable series that data-validation changes don't move |
 | Live-like | `--bench-live-checks` | The pipeline plus the live checks: `TobValidator` and sequence checks, feed health updates in the ingest thread, and the watchdog thread | Numbers close to what live pays |
 
-The output records `validate`, `health` and `watchdog` as `on|off`. The three are separate switches in code (`BenchChecks`); the CLI sets them together for now. If the watchdog stops a run early, the output adds `watchdog_stop=<reason>` and the results should be discarded. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
+The output records `validate`, `health` and `watchdog` as `on|off`. The three are separate switches in code (`PipelineConfig`); the CLI sets them together for now. If the watchdog stops a run early, the output adds `watchdog_stop=<reason>` and the results should be discarded. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
 
 Phases:
 

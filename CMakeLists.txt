@@ -87,6 +87,7 @@ add_executable(hft
   src/feed_health.cpp
   src/sequence_tracker.cpp
   src/benchmark.cpp
+  src/pipeline.cpp
 )
 add_dependencies(hft strategy_engine_build)
 target_include_directories(hft PRIVATE

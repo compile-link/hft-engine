@@ -135,7 +135,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (bench) {
-            const BenchmarkResult r = Benchmark::run(*mds, BenchChecks::all(bench_live_checks), healthConfig);
+            const BenchmarkResult r = Benchmark::run(*mds, [&] {
+                PipelineConfig c = PipelineConfig::checks(bench_live_checks);
+                c.health_cfg = healthConfig;
+                return c;
+            }());
             r.print();
         } else {
 
