@@ -138,6 +138,9 @@ int main(int argc, char* argv[]) {
             const BenchmarkResult r = Benchmark::run(*mds, [&] {
                 PipelineConfig c = PipelineConfig::checks(bench_live_checks);
                 c.health_cfg = healthConfig;
+                if (bench_live_checks) {
+                    c.expected_symbol = ReplaySource::k_symbol; // live always checks the symbol
+                }
                 return c;
             }());
             r.print();

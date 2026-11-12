@@ -23,7 +23,7 @@ MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> L
   (ingest thread)                         (process thread)
 ```
 
-**Ingest thread** - calls `MarketDataSource::next()` in a loop. On live mode, this blocks on `curl_ws_recv` until a WebSocket frame arrives, then parses the JSON payload into a `TopOfBook` and stamps `recv_ts_ns` immediately. On replay mode, it cycles through a fixed set of stub ticks with configurable sleep between them. Pushes to the ring buffer; increments a drop counter on full.
+**Ingest thread** - calls `MarketDataSource::next()` in a loop. On live mode, this blocks on `curl_ws_recv` until a WebSocket frame arrives, then parses the JSON payload into a `TopOfBook` and stamps `recv_ts_ns` immediately. On replay mode, it cycles through a fixed set of raw bookTicker JSON frames (the live stream's format) with configurable sleep between them, and parses each one with the same `book_ticker::parse` call as live. Pushes to the ring buffer; increments a drop counter on full.
 
 **Process thread** - pops `TopOfBook` from the ring buffer, serializes it to Protobuf bytes, calls `rust_decide()` via FFI, and logs the returned action as a `StrategySignal`. On empty buffer, yields and retries; exits when the ingest thread signals done.
 
@@ -38,9 +38,9 @@ MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> L
 Two spans are measured per message, with fixed start and stop points:
 
 - `e2e_ns = t1 - recv_ts_ns` - ingest to completed signal.
-  - Start, `recv_ts_ns`: stamped in the ingest thread when the message reaches the engine. Live: taken right before the JSON frame is parsed (`LiveWebSocketSource::next`). Replay: taken after the pacing sleep, so simulated inter-tick gaps are not counted.
+  - Start, `recv_ts_ns`: stamped in the ingest thread when the message reaches the engine. Live: taken right before the JSON frame is parsed (`LiveWebSocketSource::next`). Replay: taken the same way, after the pacing sleep, so simulated inter-tick gaps are not counted.
   - Stop, `t1`: once the `StrategySignal` is built. Logging the signal is excluded - it is rate-limited I/O, not per-message pipeline work.
-  - Covers: parse (live only - replay emits prebuilt ticks), validation, ring buffer transit, serialize, `rust_decide`, `StrategySignal` construction.
+  - Covers: JSON parse, validation, ring buffer transit, serialize, `rust_decide`, `StrategySignal` construction.
 - `strat_ns = strat_end - t0` - the strategy entry point only.
   - Start/stop: immediately around the `rust_decide` call, after serialization and before the signal is built.
   - Covers: the C-ABI call into the statically linked Rust library (a few ns), Protobuf decode, and the decision logic. Decode stays in the span because it runs inside the strategy.
@@ -53,7 +53,7 @@ In normal mode these are logged at a rate-limited 1s interval. In benchmark mode
 ./build/debug/hft --bench
 ```
 
-Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`.
+Runs against the replay source (stub bookTicker frames, parsed as live, no sleep between frames). With `--bench-live-checks` the validator also checks the symbol, as live does. Rejects `--source` values other than `replay`.
 
 The benchmark supports two configurations that measure different things. Run and report both:
 
@@ -249,7 +249,7 @@ That script updates `vcpkg.json` only. The baseline is recorded nowhere else.
 # Live feed (default symbol: btcusdt)
 ./build/debug/hft --source live --symbol btcusdt
 
-# Replay (stub ticks, loops indefinitely)
+# Replay (stub bookTicker frames, loops indefinitely)
 ./build/debug/hft --source replay
 
 # Custom spread threshold
@@ -288,7 +288,7 @@ tests/                  GoogleTest unit tests (CTest)
 
 ## Status
 
-Working pipeline: live WebSocket ingest, replay mode, and benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub ticks.
+Working pipeline: live WebSocket ingest, replay mode, and benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub bookTicker frames.
 
 ## Roadmap
 

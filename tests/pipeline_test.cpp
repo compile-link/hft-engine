@@ -28,6 +28,9 @@ TEST(Pipeline, DeliversEveryTickWithOrderedSpans) {
         ReplaySource src(single_pass());
         RecordingObserver obs;
         PipelineConfig cfg = PipelineConfig::checks(checks);
+        if (checks) {
+            cfg.expected_symbol = ReplaySource::k_symbol;
+        }
 
         const PipelineStats stats = Pipeline(cfg, &obs).run(src);
 

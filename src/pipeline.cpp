@@ -123,7 +123,7 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             sig.set_symbol(tob.symbol());
             sig.set_action(static_cast<hft::QuoteAction>(action));
             sig.set_reason("spread_cond");
-            sig.set_ts_ns(spans.strat_end_ns); // decision time
+            sig.set_ts_ns(spans.strat_end_ns);  // decision time
             spans.t1_ns = time_utils::now_ns(); // e2e stop: signal complete
 
             if (observer_) {
