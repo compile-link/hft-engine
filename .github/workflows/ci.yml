@@ -44,6 +44,9 @@ jobs:
       - name: hadolint (Dockerfile)
         if: ${{ !cancelled() }}
         run: scripts/hadolint.sh
+      - name: CI merge gate wiring
+        if: ${{ !cancelled() }}
+        run: scripts/check-ci-gate.sh
 
   rust:
     name: Rust (fmt, clippy, test)
@@ -186,3 +189,48 @@ jobs:
             ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
             build/${{ matrix.preset }}/vcpkg-manifest-install.log
           if-no-files-found: ignore
+
+  # The only required status check. Branch protection names this job and
+  # nothing else, so adding, renaming, splitting or dropping a job above is a
+  # pull request on its own and never needs a matching ruleset edit.
+  #
+  # That indirection is what keeps idle pull requests mergeable. A required
+  # context is only ever reported by a workflow run, and an open pull request
+  # that nobody pushes to gets no new runs -- so a context added or renamed
+  # after its last run stays "expected" forever. Dependabot pull requests sit
+  # idle by design and were the ones that hit this.
+  ci-success:
+    name: CI success
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [format, lint-infra, rust, tidy, docker, build-test]
+    # Must run even when a dependency failed, was skipped or was cancelled:
+    # a required check that reports nothing blocks the pull request outright.
+    if: ${{ always() }}
+    steps:
+      - name: Check the result of every job
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<< "$NEEDS"
+
+          total=$(jq -r 'length' <<< "$NEEDS")
+          not_green=$(
+            jq -r '[to_entries[]
+                    | select(.value.result != "success")
+                    | "\(.key) (\(.value.result))"] | join(", ")' <<< "$NEEDS"
+          )
+
+          # Counted, not just scanned for failures: a gate that only looks for
+          # something wrong reports success when it cannot read its input at
+          # all. Both branches below have to be reached to merge anything.
+          if [[ "$total" -eq 0 ]]; then
+            echo "::error::No job results to inspect; refusing to report success."
+            exit 1
+          fi
+          if [[ -n "$not_green" ]]; then
+            echo "::error::CI did not pass. Not successful: ${not_green}"
+            exit 1
+          fi
+          echo "All ${total} jobs succeeded."

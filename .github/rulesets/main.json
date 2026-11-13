@@ -30,13 +30,7 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "Format (clang-format)", "integration_id": 15368 },
-          { "context": "Lint infrastructure", "integration_id": 15368 },
-          { "context": "Rust (fmt, clippy, test)", "integration_id": 15368 },
-          { "context": "clang-tidy", "integration_id": 15368 },
-          { "context": "Docker image", "integration_id": 15368 },
-          { "context": "Build & test (debug)", "integration_id": 15368 },
-          { "context": "Build & test (release)", "integration_id": 15368 }
+          { "context": "CI success", "integration_id": 15368 }
         ]
       }
     }
