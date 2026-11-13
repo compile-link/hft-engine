@@ -19,26 +19,27 @@ Data crosses the C++/Rust boundary as a serialized Protobuf message. The C++ sid
 ## Architecture
 
 ```
-MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> Log
+MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> Observer
   (ingest thread)                         (process thread)
+                        (watchdog thread: feed health)
 ```
 
-**Ingest thread** - calls `MarketDataSource::next()` in a loop. On live mode, this blocks on `curl_ws_recv` until a WebSocket frame arrives, then parses the JSON payload into a `TopOfBook` and stamps `recv_ts_ns` immediately. On replay mode, it cycles through a fixed set of stub ticks with configurable sleep between them. Pushes to the ring buffer; increments a drop counter on full.
+Live, replay and benchmark runs all use one `Pipeline` implementation. A mode only chooses what it plugs in: a `MarketDataSource` (live WebSocket or replay), a `PipelineConfig` (which checks run), and a `PipelineObserver` (logging for normal runs, sampling for the benchmark). The measured path is identical in every mode.
 
-**Process thread** - pops `TopOfBook` from the ring buffer, serializes it to Protobuf bytes, calls `rust_decide()` via FFI, and logs the returned action as a `StrategySignal`. On empty buffer, yields and retries; exits when the ingest thread signals done.
-
-**Ring buffer (`TobRingBuffer`)** - fixed capacity (1024 slots), `std::atomic` head and tail. `push` checks `next == tail` before writing; `pop` checks `tail == head` before reading. Returns `false` on full/empty rather than blocking.
-
-**Strategy module (Rust, `rust_decide`)** - receives serialized `TopOfBook` bytes, decodes with `prost`, evaluates spread against a configurable threshold, returns one of: `QuoteBoth` (spread >= threshold), `Hold` (spread < threshold), or `CancelAll` (invalid book: non-positive prices or ask < bid). Threshold is set once from C++ via `rust_set_threshold` before the pipeline starts.
-
-**Source abstraction** - `MarketDataSource` is a pure virtual interface. `LiveWebSocketSource` and `ReplaySource` both implement `next(TopOfBook&)`. The factory (`source_factory.cpp`) constructs the appropriate source based on the `--source` flag. Adding a new source (e.g., CSV file, different exchange) does not touch the pipeline.
+See [docs/architecture.md](docs/architecture.md) for the dataflow, components, observer events, threads and shutdown.
 
 ## Latency Instrumentation
 
-`recv_ts_ns` is stamped in the ingest thread immediately after a message is parsed from the wire. In the process thread, `t0` is stamped before the FFI call and `t1` after. This gives two independent measurements per message:
+Two spans are measured per message, with fixed start and stop points:
 
-- `e2e_ns = t1 - recv_ts_ns` - full pipeline latency: parse -> ring buffer transit -> serialize -> FFI call
-- `strat_ns = t1 - t0` - cost of the `rust_decide` FFI call only
+- `e2e_ns = t1 - recv_ts_ns` - ingest to completed signal.
+  - Start, `recv_ts_ns`: stamped in the ingest thread when the message reaches the engine. Live: taken right before the JSON frame is parsed (`LiveWebSocketSource::next`). Replay: taken the same way, after the pacing sleep, so simulated inter-tick gaps are not counted.
+  - Stop, `t1`: once the `StrategySignal` is built. Logging the signal is excluded - it is rate-limited I/O, not per-message pipeline work.
+  - Covers: JSON parse, validation, ring buffer transit, serialize, `rust_decide`, `StrategySignal` construction.
+- `strat_ns = strat_end - t0` - the strategy entry point only.
+  - Start/stop: immediately around the `rust_decide` call, after serialization and before the signal is built.
+  - Covers: the C-ABI call into the statically linked Rust library (a few ns), Protobuf decode, and the decision logic. Decode stays in the span because it runs inside the strategy.
+
 In normal mode these are logged at a rate-limited 1s interval. In benchmark mode they are collected across the full measurement window and reported as percentiles.
 
 ## Benchmark Mode
@@ -47,9 +48,18 @@ In normal mode these are logged at a rate-limited 1s interval. In benchmark mode
 ./build/debug/hft --bench
 ```
 
-Runs against the replay source (stub ticks, no sleep between ticks). Rejects `--source` values other than `replay`.
+Runs against the replay source (stub bookTicker frames, parsed as live, no sleep between frames). With `--bench-live-checks` the validator also checks the symbol, as live does. Rejects `--source` values other than `replay`.
 
-By default the benchmark ingest path skips `TobValidator`, so results stay comparable with earlier baselines. Pass `--bench-validate` to run the validator in the ingest thread as the live path does; its cost then lands in `e2e_ns`. The output records `validate=on|off`. Phases:
+The benchmark supports two configurations that measure different things. Run and report both:
+
+| Configuration | Flag | Measures | Use for |
+|---|---|---|---|
+| Pipeline (default) | - | Queue, serialize, strategy and signal, without validation | A stable series that data-validation changes don't move |
+| Live-like | `--bench-live-checks` | The pipeline plus the live checks: `TobValidator` and sequence checks, feed health updates in the ingest thread, and the watchdog thread | Numbers close to what live pays |
+
+The output records `validate`, `health` and `watchdog` as `on|off`. The three are separate switches in code (`PipelineConfig`); the CLI sets them together for now. If the watchdog stops a run early, the output adds `watchdog_stop=<reason>` and the results should be discarded. Results are only comparable within one configuration. If a span definition changes, record a new baseline rather than reusing old numbers.
+
+Phases:
 
 - **Warmup**: 3 seconds, samples discarded
 - **Measurement**: 20 seconds of samples collected per metric
@@ -57,7 +67,7 @@ By default the benchmark ingest path skips `TobValidator`, so results stay compa
 Reports on completion:
 
 ```
-Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=... validate=off rejected=0
+Benchmark: measured_msgs=... measured_seconds=20 throughput_msgs_per_sec=... drops=... validate=off health=off watchdog=off rejected=0
 
 Benchmark Latency: e2e_p50_ns=... e2e_p99_ns=... e2e_p999_ns=... e2e_max_ns=... strat_p50_ns=... strat_p99_ns=... strat_p999_ns=... strat_max_ns=...
 ```
@@ -234,7 +244,7 @@ That script updates `vcpkg.json` only. The baseline is recorded nowhere else.
 # Live feed (default symbol: btcusdt)
 ./build/debug/hft --source live --symbol btcusdt
 
-# Replay (stub ticks, loops indefinitely)
+# Replay (stub bookTicker frames, loops indefinitely)
 ./build/debug/hft --source replay
 
 # Custom spread threshold
@@ -262,18 +272,19 @@ Default thresholds if not specified: live `0.0000007`, replay `1.0`.
 ## Project Structure
 
 ```
-src/                    Pipeline implementation: main, threading, ingest, benchmark
+src/                    Pipeline implementation: pipeline, observers, sources, benchmark
 include/                Headers (ring buffer, sources, utilities)
 include/runtime/        Process-scope RAII guards (CurlGlobalGuard)
 proto/                  Protobuf schema: TopOfBook, StrategySignal, QuoteAction
 strategy_engine/        Rust FFI module (lib.rs, build.rs for prost codegen)
 scripts/                Build helpers and benchmark runner
 tests/                  GoogleTest unit tests (CTest)
+docs/                   Design docs (architecture.md: pipeline, dataflow, threads)
 ```
 
 ## Status
 
-Working pipeline: live WebSocket ingest, replay mode, and benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub ticks.
+Working pipeline: live WebSocket ingest, replay mode, and benchmark mode with percentile reporting. No order/quote output - signals are logged only. Replay source uses hardcoded stub bookTicker frames.
 
 ## Roadmap
 

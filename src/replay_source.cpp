@@ -1,56 +1,54 @@
 #include "replay_source.hpp"
+#include "book_ticker_parse.hpp"
 #include "time_utils.hpp"
+#include <cstdio>
 #include <thread>
 
 namespace {
-    hft::TopOfBook make_tob(
-        const std::string& symbol,
-        double bid_px,
-        double ask_px,
-        double bid_qty,
-        double ask_qty,
-        uint64_t exch_ts,
-        uint64_t recv_ts,
-        uint64_t seq) {
-        hft::TopOfBook t;
-        t.set_symbol(symbol);
-        t.set_bid_px(bid_px);
-        t.set_ask_px(ask_px);
-        t.set_bid_qty(bid_qty);
-        t.set_ask_qty(ask_qty);
-        t.set_exchange_ts_ns(exch_ts);
-        t.set_recv_ts_ns(recv_ts);
-        t.set_sequence(seq);
-        return t;
+    struct StubTick {
+        double bid_px, ask_px, bid_qty, ask_qty;
+    };
+
+    constexpr StubTick k_base_ticks[] = {
+        {100.00, 100.80, 1.0, 1.0},
+        {100.00, 101.00, 1.0, 1.0},
+        {100.20, 101.40, 1.2, 0.9},
+        {100.50, 101.49, 1.1, 1.1},
+        {100.75, 101.75, 0.8, 1.3},
+    };
+
+#ifdef HFT_PROFILE
+    constexpr int k_repeats = 10;
+#else
+    constexpr int k_repeats = 1;
+#endif
+
+    // Raw Binance bookTicker frame, the same shape the live /ws/<symbol>@bookTicker stream sends:
+    // 8-decimal price/qty strings and an exchange-sized update ID.
+    std::string make_frame(const StubTick& t, uint64_t update_id) {
+        char buf[192];
+        const int n = std::snprintf(
+            buf, sizeof(buf),
+            R"({"u":%llu,"s":"%s","b":"%.8f","B":"%.8f","a":"%.8f","A":"%.8f"})",
+            static_cast<unsigned long long>(update_id), ReplaySource::k_symbol, t.bid_px, t.bid_qty, t.ask_px, t.ask_qty);
+        return std::string(buf, static_cast<size_t>(n));
     }
 
     // Built on first use rather than at static initialization, where an
     // exception (e.g. bad_alloc) could not be caught.
-    const std::vector<hft::TopOfBook>& base_ticks() {
-        static const std::vector<hft::TopOfBook> ticks = {
-            make_tob("BTCUSDT", 100.00, 100.80, 1.0, 1.0, 1'000'000, 1'000'100, 1),
-            make_tob("BTCUSDT", 100.00, 101.00, 1.0, 1.0, 1'000'200, 1'000'300, 2),
-            make_tob("BTCUSDT", 100.20, 101.40, 1.2, 0.9, 1'000'400, 1'000'500, 3),
-            make_tob("BTCUSDT", 100.50, 101.49, 1.1, 1.1, 1'000'600, 1'000'700, 4),
-            make_tob("BTCUSDT", 100.75, 101.75, 0.8, 1.3, 1'000'800, 1'000'900, 5)};
-        return ticks;
-    }
-
-    const std::vector<hft::TopOfBook>& mock_ticks() {
-#ifdef HFT_PROFILE
-        static const std::vector<hft::TopOfBook> expanded = [] {
-            const auto& base = base_ticks();
-            std::vector<hft::TopOfBook> v;
-            v.reserve(base.size() * 100);
-            for (int i = 0; i < 10; ++i) {
-                v.insert(v.end(), base.begin(), base.end());
+    // Update IDs increase across the whole pass, so repeats are not duplicates to the SequenceTracker.
+    const std::vector<std::string>& mock_frames() {
+        static const std::vector<std::string> frames = [] {
+            std::vector<std::string> v;
+            uint64_t update_id = 400'900'217;
+            for (int r = 0; r < k_repeats; ++r) {
+                for (const StubTick& t : k_base_ticks) {
+                    v.push_back(make_frame(t, update_id++));
+                }
             }
             return v;
         }();
-        return expanded;
-#else
-        return base_ticks();
-#endif
+        return frames;
     }
 } // namespace
 
@@ -61,29 +59,32 @@ ReplaySource::ReplaySource(ReplayConfig cfg) : cfg_(cfg) {
 }
 
 bool ReplaySource::next(hft::TopOfBook& out) {
-    const auto& k_mock_ticks = mock_ticks();
-    if (stop_requested() || k_mock_ticks.empty()) {
-        return false;
-    }
-
-    if (cfg_.loop && idx_ >= k_mock_ticks.size()) {
-        idx_ = 0;
-        session_++;
-    } else if (idx_ >= k_mock_ticks.size())
-        return false;
-
-    if (replay_end_) {
-        if (std::chrono::steady_clock::now() > *replay_end_) {
+    const auto& frames = mock_frames();
+    while (!stop_requested() && !frames.empty()) {
+        if (cfg_.loop && idx_ >= frames.size()) {
+            idx_ = 0;
+            session_++;
+        } else if (idx_ >= frames.size()) {
             return false;
         }
+
+        if (replay_end_ && std::chrono::steady_clock::now() > *replay_end_) {
+            return false;
+        }
+
+        // Pacing models the gap before the next frame arrives; it is not engine latency
+        std::this_thread::sleep_for(cfg_.sleep_per_tick);
+
+        // From here on, mirror LiveWebSocketSource::next: frame activity, a fresh message buffer,
+        // then parse with recv_ts_ns stamped right before it
+        activity_.last_frame_ns.store(time_utils::now_ns(), std::memory_order_relaxed);
+        const std::string msg = frames[idx_++];
+        if (!book_ticker::parse(msg, time_utils::now_ns(), out)) {
+            activity_.last_parse_err_ns.store(time_utils::now_ns(), std::memory_order_relaxed);
+            continue;
+        }
+        out.set_session(session_);
+        return true;
     }
-
-    out = k_mock_ticks[idx_++];
-    out.set_session(session_);
-    const auto t_ns = time_utils::now_ns();
-    out.set_recv_ts_ns(t_ns);
-
-    std::this_thread::sleep_for(cfg_.sleep_per_tick);
-
-    return true;
+    return false;
 }

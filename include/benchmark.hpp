@@ -1,11 +1,16 @@
 #pragma once
 
+#include "feed_health.hpp"
 #include "market_data_source.hpp"
+#include "pipeline.hpp"
 #include <chrono>
 #include <cstdint>
 
 struct BenchmarkResult {
-    bool validated = false; // ingest ran TobValidator (mirrors the live path)
+    bool validate = false;
+    bool health = false;
+    bool watchdog = false;
+    FeedStopReason watchdog_stop = FeedStopReason::None; // set if the watchdog ended the run early
     uint64_t rejected = 0;
     uint64_t measured_msgs = 0;
     double measured_seconds = 0.0;
@@ -18,9 +23,10 @@ struct BenchmarkResult {
     void print() const;
 };
 
+// Drives the shared Pipeline over a source and samples spans inside a fixed measurement window
 class Benchmark {
   public:
-    static BenchmarkResult run(MarketDataSource& src, bool validate);
+    static BenchmarkResult run(MarketDataSource& src, const PipelineConfig& cfg);
 
   private:
     static constexpr std::chrono::seconds warmup_seconds{3};

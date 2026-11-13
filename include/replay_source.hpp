@@ -16,6 +16,8 @@ struct ReplayConfig {
 
 class ReplaySource : public MarketDataSource {
   public:
+    static constexpr const char* k_symbol = "BTCUSDT"; // symbol of every replay frame
+
     // TODO: Add path for csv data loading, helpful for tests
     explicit ReplaySource(ReplayConfig cfg);
     bool next(hft::TopOfBook& out) override;

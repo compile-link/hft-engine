@@ -1,16 +1,74 @@
 #include "benchmark.hpp"
 #include "log_utils.hpp"
-#include "market_data.pb.h"
-#include "sequence_tracker.hpp"
 #include "time_utils.hpp"
-#include "tob_ring_buffer.hpp"
-#include "tob_validator.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <sstream>
 #include <thread>
+#include <vector>
 
-extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
+namespace {
+    // Keeps samples whose e2e stop falls inside [window_start, window_end).
+    // Window membership is decided from the span timestamps, so the pipeline needs no window logic.
+    class SamplingObserver final : public PipelineObserver {
+      public:
+        SamplingObserver(uint64_t window_start_ns, uint64_t window_end_ns)
+            : start_(window_start_ns), end_(window_end_ns) {
+            e2e_.reserve(250000);
+            strat_.reserve(250000);
+        }
+
+        void on_message(const hft::StrategySignal&, const MessageSpans& s) override {
+            if (s.t1_ns < start_ || s.t1_ns >= end_) {
+                return;
+            }
+            ++msgs_;
+            if (s.recv_ts_ns > 0 && s.t1_ns >= s.recv_ts_ns) {
+                e2e_.push_back(s.t1_ns - s.recv_ts_ns);
+            }
+            strat_.push_back(s.strat_end_ns - s.t0_ns);
+        }
+
+        void on_drop(uint64_t now_ns) override {
+            if (now_ns >= start_ && now_ns < end_) {
+                drops_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+
+        // Read only after Pipeline::run returns (threads joined)
+        uint64_t msgs() const { return msgs_; }
+        uint64_t drops() const { return drops_.load(); }
+        std::vector<uint64_t>& e2e() { return e2e_; }
+        std::vector<uint64_t>& strat() { return strat_; }
+
+      private:
+        uint64_t start_, end_;
+        uint64_t msgs_ = 0;                 // process thread
+        std::atomic<uint64_t> drops_{0};    // ingest thread
+        std::vector<uint64_t> e2e_, strat_; // process thread
+    };
+
+    struct Percentiles {
+        uint64_t p50 = 0, p99 = 0, p999 = 0, max = 0;
+    };
+
+    Percentiles percentiles(std::vector<uint64_t>& v) {
+        Percentiles p;
+        if (v.empty()) {
+            return p;
+        }
+        std::sort(v.begin(), v.end());
+        const size_t n = v.size();
+        p.p50 = v[(n - 1) * 500u / 1000u];
+        p.p99 = v[(n - 1) * 990u / 1000u];
+        p.p999 = v[(n - 1) * 999u / 1000u];
+        p.max = v.back();
+        return p;
+    }
+} // namespace
 
 void BenchmarkResult::print() const {
     std::ostringstream oss;
@@ -19,8 +77,13 @@ void BenchmarkResult::print() const {
         << " measured_seconds=" << measured_seconds
         << " throughput_msgs_per_sec=" << throughput_msgs_per_sec
         << " drops=" << drops
-        << " validate=" << (validated ? "on" : "off")
+        << " validate=" << (validate ? "on" : "off")
+        << " health=" << (health ? "on" : "off")
+        << " watchdog=" << (watchdog ? "on" : "off")
         << " rejected=" << rejected;
+    if (watchdog_stop != FeedStopReason::None) {
+        oss << " watchdog_stop=" << feed_stop_reason_to_str(watchdog_stop);
+    }
     log_utils::log_to_stream(std::cout, oss.str());
 
     std::ostringstream lat;
@@ -36,148 +99,57 @@ void BenchmarkResult::print() const {
     log_utils::log_to_stream(std::cout, lat.str());
 }
 
-BenchmarkResult Benchmark::run(MarketDataSource& src, bool validate) {
-    BenchmarkResult r{};
-    r.validated = validate;
-    const auto start = std::chrono::steady_clock::now();
-    const auto warmup_end = start + warmup_seconds;
-    const auto measure_end = warmup_end + measure_seconds;
-    std::chrono::steady_clock::time_point measure_start;
-    uint64_t drops = 0;
-    uint64_t measured_msgs = 0;
+BenchmarkResult Benchmark::run(MarketDataSource& src, const PipelineConfig& cfg) {
+    using std::chrono::duration_cast;
+    using std::chrono::nanoseconds;
+    const uint64_t start_ns = time_utils::now_ns();
+    const uint64_t window_start_ns = start_ns + static_cast<uint64_t>(duration_cast<nanoseconds>(warmup_seconds).count());
+    const uint64_t window_end_ns = window_start_ns + static_cast<uint64_t>(duration_cast<nanoseconds>(measure_seconds).count());
 
-    std::atomic<bool> measure_started{false};
-    std::atomic<bool> measure_done{false};
-    std::atomic<bool> done{false};
-    uint64_t serialize_errs = 0;
-    std::vector<uint64_t> e2e_samples;
-    e2e_samples.reserve(250000);
-    std::vector<uint64_t> strat_samples;
-    strat_samples.reserve(250000);
-    TobRingBuffer q;
-    TobValidator validator; // replay stubs carry no expected symbol
-    SequenceTracker seq_tracker;
+    SamplingObserver observer(window_start_ns, window_end_ns);
+    Pipeline pipeline(cfg, &observer);
 
-    std::thread ingest([&] {
-        hft::TopOfBook tob;
-        while (src.next(tob)) {
-            // Validation sits before the measurement bookkeeping so its cost lands in e2e_ns
-            if (validate && (validator.validate(tob) != TobReject::None || !seq_accepted(seq_tracker.check(tob)))) {
-                continue;
-            }
-            auto now = std::chrono::steady_clock::now();
-            if (!measure_started.load() && now >= warmup_end) {
-                measure_start = now;
-                measure_started.store(true);
-            }
-            if (!measure_done.load()) {
-                if (std::chrono::steady_clock::now() > measure_end) {
-                    measure_done.store(true);
-
-                    break;
-                }
-            }
-
-            tob.set_feed_status(hft::FEED_OK); // keeps the strategy on its normal decision path
-            if (!q.push(tob)) {
-                if (measure_started.load()) {
-                    ++drops;
-                }
-            }
-        }
-        done.store(true);
-    });
-
-    std::thread process([&] {
-        std::string payload;
-        hft::TopOfBook tob;
-        while (true) {
-            if (!q.pop(tob)) {
-                if (done.load()) {
-                    break;
-                }
-                std::this_thread::yield();
-                continue;
-            }
-            if (!tob.SerializeToString(&payload)) {
-                ++serialize_errs;
-                continue;
-            }
-
-            const auto t0_ns = time_utils::now_ns();
-            int32_t action = rust_decide(
-                reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
-
-            const auto t1_ns = time_utils::now_ns();
-            hft::StrategySignal sig;
-            sig.set_symbol(tob.symbol());
-            sig.set_action(static_cast<hft::QuoteAction>(action));
-            sig.set_reason("spread_cond");
-            sig.set_ts_ns(static_cast<uint64_t>(t1_ns));
-            if (measure_started.load() && !measure_done.load()) {
-                ++measured_msgs;
-                const uint64_t recv_ts_ns = tob.recv_ts_ns() > 0 ? tob.recv_ts_ns() : 0;
-                if (recv_ts_ns > 0 && t1_ns >= recv_ts_ns) {
-                    e2e_samples.push_back(t1_ns - recv_ts_ns);
-                }
-                strat_samples.push_back(t1_ns - t0_ns);
-            }
+    // Stops the source once the window has closed; wakes early if the pipeline ends first
+    std::mutex m;
+    std::condition_variable cv;
+    bool finished = false;
+    std::thread timer([&] {
+        std::unique_lock<std::mutex> lk(m);
+        const auto deadline = std::chrono::steady_clock::now() + warmup_seconds + measure_seconds;
+        if (!cv.wait_until(lk, deadline, [&] { return finished; })) {
+            src.request_stop();
         }
     });
 
-    ingest.join();
-    process.join();
-
-    if (measure_started.load()) {
-        r.measured_seconds = std::chrono::duration<double>(measure_end - measure_start).count();
-        r.measured_msgs = measured_msgs;
-        r.throughput_msgs_per_sec = (r.measured_seconds > 0) ? (static_cast<double>(r.measured_msgs) / r.measured_seconds) : 0.0;
-        r.drops = drops;
-        r.serialize_errs = serialize_errs;
-        r.rejected = validator.rejected_total() + seq_tracker.rejected_total();
-
-        std::sort(e2e_samples.begin(), e2e_samples.end());
-        std::sort(strat_samples.begin(), strat_samples.end());
-
-        size_t n;
-        size_t idx50;  // index of 50 percentile
-        size_t idx99;  // index of 99 percentile
-        size_t idx999; // index of 99.9 percentile
-
-        // E2E latency metrics
-        if (e2e_samples.empty()) {
-            r.e2e_p50_ns = 0;
-            r.e2e_p99_ns = 0;
-            r.e2e_p999_ns = 0;
-            r.e2e_max_ns = 0;
-        } else {
-            n = e2e_samples.size();
-            idx50 = ((n - 1) * 500u / 1000u);
-            r.e2e_p50_ns = e2e_samples[idx50];
-            idx99 = ((n - 1) * 990u / 1000u);
-            r.e2e_p99_ns = e2e_samples[idx99];
-            idx999 = ((n - 1) * 999u / 1000u);
-            r.e2e_p999_ns = e2e_samples[idx999];
-            r.e2e_max_ns = e2e_samples.back();
-        }
-
-        // Strategy latency metrics
-        if (strat_samples.empty()) {
-            r.strat_p50_ns = 0;
-            r.strat_p99_ns = 0;
-            r.strat_p999_ns = 0;
-            r.strat_max_ns = 0;
-        } else {
-            n = strat_samples.size();
-            idx50 = ((n - 1) * 500u / 1000u);
-            r.strat_p50_ns = strat_samples[idx50];
-            idx99 = ((n - 1) * 990u / 1000u);
-            r.strat_p99_ns = strat_samples[idx99];
-            idx999 = ((n - 1) * 999u / 1000u);
-            r.strat_p999_ns = strat_samples[idx999];
-            r.strat_max_ns = strat_samples.back();
-        }
+    const PipelineStats stats = pipeline.run(src);
+    {
+        std::lock_guard<std::mutex> lk(m);
+        finished = true;
     }
+    cv.notify_one();
+    timer.join();
 
+    BenchmarkResult r{};
+    r.validate = cfg.validate;
+    r.health = cfg.health;
+    r.watchdog = cfg.watchdog;
+    r.watchdog_stop = stats.stop_reason;
+    r.rejected = stats.rejected;
+    r.serialize_errs = stats.serialize_errs;
+    r.drops = observer.drops();
+    r.measured_msgs = observer.msgs();
+    r.measured_seconds = std::chrono::duration<double>(measure_seconds).count();
+    r.throughput_msgs_per_sec = static_cast<double>(r.measured_msgs) / r.measured_seconds;
+
+    const Percentiles e2e = percentiles(observer.e2e());
+    r.e2e_p50_ns = e2e.p50;
+    r.e2e_p99_ns = e2e.p99;
+    r.e2e_p999_ns = e2e.p999;
+    r.e2e_max_ns = e2e.max;
+    const Percentiles strat = percentiles(observer.strat());
+    r.strat_p50_ns = strat.p50;
+    r.strat_p99_ns = strat.p99;
+    r.strat_p999_ns = strat.p999;
+    r.strat_max_ns = strat.max;
     return r;
 }
