@@ -168,11 +168,12 @@ library during generated-message destruction.
 | Job | What it checks |
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
-| `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile |
+| `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile, `scripts/check-ci-gate.sh` on the merge gate |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
 | `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
+| `ci-success` | Nothing of its own: it fails unless every job above succeeded |
 
 `.github/workflows/nightly.yml` runs the `asan-ubsan` and `tsan` presets
 nightly, covering both the unit tests and a benchmark-mode pipeline run.
@@ -195,11 +196,30 @@ baseline; bumping it is how they get security updates.
 
 `main` is protected by a repository ruleset whose definition is kept in
 `.github/rulesets/main.json`: changes land only through a squash-merged pull
-request with every `ci.yml` job green against the current `main`, all review
-threads resolved, and no force-pushes or branch deletion. The nightly workflow
-is not required, since it does not run on most pull requests. There are no
-bypass actors, so the rules also apply to the repository owner. The file is
-not applied automatically; after editing it, push it to GitHub with:
+request with CI green against the current `main`, all review threads resolved,
+and no force-pushes or branch deletion. The nightly workflow is not required,
+since it does not run on most pull requests. There are no bypass actors, so the
+rules also apply to the repository owner.
+
+`CI success` is the ruleset's **only** required status check. It is the
+`ci-success` job, which does no work itself and simply fails unless every other
+`ci.yml` job succeeded. Required contexts are matched by job name, so listing
+the jobs individually meant that renaming one, or adding one, silently broke
+every pull request that was already open:
+
+- a required context is only ever reported by a workflow run, and an open pull
+  request gets a new run only when something is pushed to it;
+- so a context introduced after a pull request's last run stays stuck on
+  "Expected — waiting for status to be reported", with nothing to trigger it;
+- Dependabot pull requests sit idle by design and are the first to hit this.
+
+Keeping one stable context means job names can change freely in a normal pull
+request, and a stale open pull request only ever needs a rebase (which it needs
+anyway: `strict_required_status_checks_policy` requires branches to be up to
+date with `main`).
+
+The file is not applied automatically; after editing it, push it to GitHub
+with:
 
 ```bash
 id=$(gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.name=="main") | .id')
@@ -215,6 +235,7 @@ scripts/tidy.sh                  # same check as the tidy job
 scripts/actionlint.sh            # workflows, incl. their run: steps
 scripts/shellcheck.sh            # *.sh and composite action steps
 scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)
+scripts/check-ci-gate.sh         # ci-success gates every job; ruleset agrees
 scripts/audit.sh                 # RustSec advisories for Cargo.lock
 scripts/trivy.sh hft-engine      # image scan (build the image first)
 ```
@@ -235,6 +256,13 @@ scripts/update-vcpkg-baseline.sh 2026.10.16 # a specific release
 ```
 
 That script updates `vcpkg.json` only. The baseline is recorded nowhere else.
+
+A Dependabot pull request that shows a required check as permanently
+"Expected" has a head commit older than a change to CI, so no run ever
+reported that context. Comment `@dependabot rebase` on it: the rebase pushes a
+new head, CI runs against the current workflows, and the check appears. Only
+the single `CI success` context can get into this state now, and only for pull
+requests opened before it existed.
 
 ## Run
 
