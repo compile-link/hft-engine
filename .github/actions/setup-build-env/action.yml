@@ -5,9 +5,14 @@ description: >
   store for built dependencies.
 
 inputs:
-  cache-key:
-    description: Extra component for the vcpkg binary cache key (e.g. the preset).
-    required: true
+  cargo-cache:
+    description: >
+      Which cargo build this job runs, so jobs that build the same thing share
+      one cache: "release" for anything that builds through CMake (always
+      cargo build --release), "lint" for clippy and cargo test (dev profile).
+      Empty for jobs that do not build Rust; no cargo cache is used then.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -16,15 +21,26 @@ runs:
       shell: bash
       run: rustup toolchain install && rustc --version && cargo --version
 
-    - name: Cache cargo registry and build artifacts
+    # Only what cargo cannot cheaply recreate: the registry index and the
+    # downloaded .crate files (not registry/src, which cargo re-extracts from
+    # them), git dependencies, and target/.
+    #
+    # No restore-keys, on purpose. A hit on the exact key is never re-saved,
+    # but a fallback restore of an older target/ is, with every artifact cargo
+    # no longer uses still inside: the cache grew 50 -> 58 -> 75 MB over three
+    # Cargo.lock versions that way. The price of an exact key is one cold
+    # dependency build (well under a minute) when Cargo.lock or the toolchain
+    # changes.
+    - name: Cache cargo downloads and build artifacts
+      if: inputs.cargo-cache != ''
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ~/.cargo/registry
-          ~/.cargo/git
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
           strategy_engine/target
-        key: cargo-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
-        restore-keys: cargo-${{ inputs.cache-key }}-${{ runner.os }}-
+        key: cargo-${{ inputs.cargo-cache }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'strategy_engine/Cargo.lock') }}
 
     - name: Read vcpkg baseline
       id: baseline

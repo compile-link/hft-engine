@@ -46,9 +46,30 @@ jobs:
           tags: hft-engine:nightly
           cache-from: type=gha
 
+      # The only writer of the Trivy DB cache; the CI docker job restores it.
+      # Saved from main only (not from this workflow's pull_request runs), so
+      # every pull request can read it.
+      - name: Date for Trivy DB cache
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Restore Trivy DB
+        id: trivy-db
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.day }}
+          restore-keys: trivy-db-
+
       - name: Scan the image (Trivy)
         if: ${{ !cancelled() }}
         run: scripts/trivy.sh hft-engine:nightly
+
+      - name: Save Trivy DB
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.trivy-db.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.day }}
 
   sanitize:
     name: ${{ matrix.preset }}
@@ -67,8 +88,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup-build-env
+        # Sanitizers instrument the C++ side only; the Rust staticlib is the
+        # same cargo build --release as in CI, so it shares that cache.
         with:
-          cache-key: ${{ matrix.preset }}
+          cargo-cache: release
 
       - name: Configure sanitizer runtime options
         run: |

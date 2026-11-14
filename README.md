@@ -187,17 +187,27 @@ GitHub gives the repository 10 GB of Actions cache and evicts the least
 recently used entries beyond that. A cache saved on `main` is readable by
 every pull request; one saved on a pull request only by that pull request.
 
-| Cache | Size (approx.) | Saved from |
-| --- | --- | --- |
-| Docker layers (`type=gha,mode=max`) | several GB | `main` only |
-| vcpkg checkout and binary archives | ~0.5 GB | any run |
-| cargo registry and `target/`, per job | ~70 MB each | any run |
-| Trivy DB, per day | ~100 MB | any run |
+| Cache | Key | Saved from | Restore fallback |
+| --- | --- | --- | --- |
+| Docker layers (`type=gha,mode=max`) | BuildKit layer digests | `main` only | n/a |
+| vcpkg checkout | vcpkg baseline | any run, on a new baseline | none |
+| vcpkg binary archives | `vcpkg.json` | any run, on a change | previous `vcpkg.json` |
+| cargo, `release` (CMake builds, sanitizers) | toolchain + `Cargo.lock` | any run, on a change | none |
+| cargo, `lint` (clippy, `cargo test`) | toolchain + `Cargo.lock` | any run, on a change | none |
+| Trivy DB | UTC date | nightly on `main` only | previous day |
 
-The Docker layer cache is the only large one, so it is the only one restricted
-to `main`; saving it per pull request is what used to push the others out.
-Losing the vcpkg cache means rebuilding every C++ dependency from source,
-which is why the build timeouts are far above normal run times.
+A cache is saved only when its exact key missed, so a pull request that leaves
+its inputs alone reads `main`'s copy and saves nothing. The Docker layer cache
+is gigabytes, so it is written from `main` alone; saving it per pull request is
+what used to push the others out.
+
+The cargo caches have no restore fallback: restoring an older `target/` and
+saving it again carries every stale artifact along (it grew 50 -> 75 MB over
+three `Cargo.lock` versions). A lockfile or toolchain change costs one cold
+dependency build instead, well under a minute. The vcpkg archives keep their
+fallback, because a cold C++ dependency build is the slowest thing CI does;
+they grow only when `vcpkg.json` changes. If they ever grow too large, change
+the `vcpkg-` key prefix in `.github/actions/setup-build-env` to start over.
 
 ### Security scanning
 
