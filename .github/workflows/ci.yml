@@ -60,7 +60,7 @@ jobs:
 
       - uses: ./.github/actions/setup-build-env
         with:
-          cache-key: lint
+          cargo-cache: lint
 
       # prost-build shells out to protoc. Use the vcpkg-pinned one, exactly as
       # the CMake build does (see strategy_engine_build in CMakeLists.txt), so
@@ -93,9 +93,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
+      # No cargo cache: this job configures CMake and generates protobuf
+      # headers, but never builds the Rust crate.
       - uses: ./.github/actions/setup-build-env
-        with:
-          cache-key: tidy
 
       # Configure produces compile_commands.json; hft_proto generates the
       # protobuf headers that the sources include. A full build is not needed.
@@ -126,8 +126,14 @@ jobs:
           push: false
           load: true
           tags: hft-engine:ci
+          # Layers are read on every run but written only from main. A cache
+          # saved on a pull request is visible to that pull request alone, and
+          # mode=max (every layer of every stage, needed because the expensive
+          # vcpkg build is an intermediate stage) runs to gigabytes. Saved per
+          # PR, it overflowed the repository's 10 GB cache budget and evicted
+          # the small vcpkg caches that keep every other job off the cold path.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       - name: Smoke-test the image
         run: |
@@ -146,7 +152,9 @@ jobs:
       - name: Date for Trivy DB cache
         id: date
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restore only. The nightly security scan on main saves the day's DB;
+      # saving it here too stored ~100 MB per pull request per day.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/trivy
           key: trivy-db-${{ steps.date.outputs.day }}
@@ -169,7 +177,7 @@ jobs:
 
       - uses: ./.github/actions/setup-build-env
         with:
-          cache-key: build
+          cargo-cache: release
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}

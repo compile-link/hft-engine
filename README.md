@@ -170,7 +170,7 @@ library during generated-message destruction.
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile, `scripts/check-ci-gate.sh` on the merge gate |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
-| `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
+| `tidy` | `clang-tidy` on every source file, one process per file in parallel (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
 | `ci-success` | Nothing of its own: it fails unless every job above succeeded |
@@ -180,6 +180,34 @@ nightly, covering both the unit tests and a benchmark-mode pipeline run.
 Suppression files live in `.github/sanitizers/`. It also re-runs `cargo audit`
 and the Trivy image scan, because new advisories appear for code that has not
 changed.
+
+### Caching
+
+GitHub gives the repository 10 GB of Actions cache and evicts the least
+recently used entries beyond that. A cache saved on `main` is readable by
+every pull request; one saved on a pull request only by that pull request.
+
+| Cache | Key | Saved from | Restore fallback |
+| --- | --- | --- | --- |
+| Docker layers (`type=gha,mode=max`) | BuildKit layer digests | `main` only | n/a |
+| vcpkg checkout | vcpkg baseline | any run, on a new baseline | none |
+| vcpkg binary archives | `vcpkg.json` | any run, on a change | previous `vcpkg.json` |
+| cargo, `release` (CMake builds, sanitizers) | toolchain + `Cargo.lock` | any run, on a change | none |
+| cargo, `lint` (clippy, `cargo test`) | toolchain + `Cargo.lock` | any run, on a change | none |
+| Trivy DB | UTC date | nightly on `main` only | previous day |
+
+A cache is saved only when its exact key missed, so a pull request that leaves
+its inputs alone reads `main`'s copy and saves nothing. The Docker layer cache
+is gigabytes, so it is written from `main` alone; saving it per pull request is
+what used to push the others out.
+
+The cargo caches have no restore fallback: restoring an older `target/` and
+saving it again carries every stale artifact along (it grew 50 -> 75 MB over
+three `Cargo.lock` versions). A lockfile or toolchain change costs one cold
+dependency build instead, well under a minute. The vcpkg archives keep their
+fallback, because a cold C++ dependency build is the slowest thing CI does;
+they grow only when `vcpkg.json` changes. If they ever grow too large, change
+the `vcpkg-` key prefix in `.github/actions/setup-build-env` to start over.
 
 ### Security scanning
 
@@ -231,7 +259,7 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.
 ```bash
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
-scripts/tidy.sh                  # same check as the tidy job
+scripts/tidy.sh                  # same check as the tidy job (TIDY_JOBS=N to cap)
 scripts/actionlint.sh            # workflows, incl. their run: steps
 scripts/shellcheck.sh            # *.sh and composite action steps
 scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)
@@ -247,8 +275,12 @@ release binaries, the SHA-256), because diagnostics differ between releases.
 ### Dependency updates
 
 Dependabot (`.github/dependabot.yml`) proposes weekly updates for Cargo
-crates, GitHub Actions and the Docker base image. The vcpkg baseline has no
-Dependabot support and is bumped with:
+crates, GitHub Actions and the Docker base image. Routine Cargo patch and
+minor bumps arrive as one grouped PR; majors arrive on their own, except for
+`prost`/`prost-*`, which are always grouped together at every update type
+because `prost-build` generates the code the `prost` runtime decodes.
+
+The vcpkg baseline has no Dependabot support and is bumped with:
 
 ```bash
 scripts/update-vcpkg-baseline.sh            # latest vcpkg release
