@@ -12,9 +12,25 @@ updates:
     commit-message:
       prefix: "build(deps)"
     groups:
+      # prost-build generates the code that prost deserializes at runtime, so
+      # the two have to move together; a bump to one alone can leave the
+      # generated code and the runtime on incompatible versions. #20 and #21
+      # arrived split exactly that way. Grouped for every update type,
+      # including majors, because a major is precisely when the generated
+      # code changes. Listed first and excluded from the catch-all below, so
+      # the pairing holds whichever group Dependabot considers first.
+      prost:
+        patterns:
+          - prost
+          - prost-*
+        update-types: [major, minor, patch]
+
       # One PR for routine patch/minor bumps; majors stay separate so they get
       # reviewed on their own.
       cargo-minor-patch:
+        exclude-patterns:
+          - prost
+          - prost-*
         update-types: [minor, patch]
 
   # GitHub Actions. Actions are pinned to commit SHAs, which Dependabot

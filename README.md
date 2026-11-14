@@ -247,8 +247,12 @@ release binaries, the SHA-256), because diagnostics differ between releases.
 ### Dependency updates
 
 Dependabot (`.github/dependabot.yml`) proposes weekly updates for Cargo
-crates, GitHub Actions and the Docker base image. The vcpkg baseline has no
-Dependabot support and is bumped with:
+crates, GitHub Actions and the Docker base image. Routine Cargo patch and
+minor bumps arrive as one grouped PR; majors arrive on their own, except for
+`prost`/`prost-*`, which are always grouped together at every update type
+because `prost-build` generates the code the `prost` runtime decodes.
+
+The vcpkg baseline has no Dependabot support and is bumped with:
 
 ```bash
 scripts/update-vcpkg-baseline.sh            # latest vcpkg release
