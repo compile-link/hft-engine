@@ -170,7 +170,7 @@ library during generated-message destruction.
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile, `scripts/check-ci-gate.sh` on the merge gate |
 | `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
-| `tidy` | `clang-tidy` on every source file (`scripts/tidy.sh`) |
+| `tidy` | `clang-tidy` on every source file, one process per file in parallel (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
 | `ci-success` | Nothing of its own: it fails unless every job above succeeded |
@@ -180,6 +180,24 @@ nightly, covering both the unit tests and a benchmark-mode pipeline run.
 Suppression files live in `.github/sanitizers/`. It also re-runs `cargo audit`
 and the Trivy image scan, because new advisories appear for code that has not
 changed.
+
+### Caching
+
+GitHub gives the repository 10 GB of Actions cache and evicts the least
+recently used entries beyond that. A cache saved on `main` is readable by
+every pull request; one saved on a pull request only by that pull request.
+
+| Cache | Size (approx.) | Saved from |
+| --- | --- | --- |
+| Docker layers (`type=gha,mode=max`) | several GB | `main` only |
+| vcpkg checkout and binary archives | ~0.5 GB | any run |
+| cargo registry and `target/`, per job | ~70 MB each | any run |
+| Trivy DB, per day | ~100 MB | any run |
+
+The Docker layer cache is the only large one, so it is the only one restricted
+to `main`; saving it per pull request is what used to push the others out.
+Losing the vcpkg cache means rebuilding every C++ dependency from source,
+which is why the build timeouts are far above normal run times.
 
 ### Security scanning
 
@@ -231,7 +249,7 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/$id" --input .github/rulesets/main.
 ```bash
 scripts/format.sh --check        # same check as the format job
 scripts/format.sh                # reformat in place
-scripts/tidy.sh                  # same check as the tidy job
+scripts/tidy.sh                  # same check as the tidy job (TIDY_JOBS=N to cap)
 scripts/actionlint.sh            # workflows, incl. their run: steps
 scripts/shellcheck.sh            # *.sh and composite action steps
 scripts/hadolint.sh              # Dockerfile (rules in .hadolint.yaml)

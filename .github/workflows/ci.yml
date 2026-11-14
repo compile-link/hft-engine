@@ -126,8 +126,14 @@ jobs:
           push: false
           load: true
           tags: hft-engine:ci
+          # Layers are read on every run but written only from main. A cache
+          # saved on a pull request is visible to that pull request alone, and
+          # mode=max (every layer of every stage, needed because the expensive
+          # vcpkg build is an intermediate stage) runs to gigabytes. Saved per
+          # PR, it overflowed the repository's 10 GB cache budget and evicted
+          # the small vcpkg caches that keep every other job off the cold path.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       - name: Smoke-test the image
         run: |
