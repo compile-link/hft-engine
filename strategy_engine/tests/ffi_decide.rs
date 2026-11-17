@@ -12,7 +12,7 @@ use proptest::test_runner::FileFailurePersistence;
 use prost::encoding::{encode_key, encode_varint, WireType};
 use prost::Message;
 use std::ptr;
-use strategy_engine::pb::{FeedStatus, QuoteAction};
+use strategy_engine::pb::{FeedStatus, QuoteAction, TopOfBook};
 use strategy_engine::rust_decide;
 
 const HOLD: i32 = QuoteAction::Hold as i32;
@@ -276,6 +276,150 @@ proptest! {
         extended.extend_from_slice(&msg);
         extended.extend_from_slice(&after.concat());
         prop_assert_eq!(decide_bytes(&extended), decide_bytes(&msg));
+    }
+}
+
+// --- Duplicated fields ---
+// Protobuf lets a field appear more than once in one message; the decoder keeps
+// the last value. Appending an encoded field to a message therefore overrides
+// it, and concatenating two messages merges them: the second one's fields that
+// are on the wire win. The engine never sends either, but the strategy must
+// decide on the value that wins, not an earlier one. Each test checks the
+// standard message first, then the same message with a duplicated field.
+
+// TopOfBook field numbers (proto/market_data.proto)
+const BID_PX: u32 = 2;
+const ASK_PX: u32 = 4;
+const FEED_STATUS: u32 = 10;
+
+// One encoded double field, to append to a standard message
+fn price_field(number: u32, value: f64) -> Vec<u8> {
+    let mut out = Vec::new();
+    prost::encoding::double::encode(number, &value, &mut out);
+    out
+}
+
+// One encoded feed_status field (enums are encoded as int32 varints)
+fn status_field(status: FeedStatus) -> Vec<u8> {
+    let mut out = Vec::new();
+    prost::encoding::int32::encode(FEED_STATUS, &(status as i32), &mut out);
+    out
+}
+
+fn with_field(standard: &[u8], field: Vec<u8>) -> Vec<u8> {
+    [standard, &field[..]].concat()
+}
+
+#[test]
+fn duplicated_fields_have_the_expected_wire_form() {
+    // A field key is (number << 3) | wire type: 0x50 = field 10 varint,
+    // 0x11 = field 2 64-bit, 0x21 = field 4 64-bit
+    assert_eq!(status_field(FeedStatus::FeedHalted), [0x50, 0x03]);
+    assert_eq!(price_field(BID_PX, 103.0)[0], 0x11);
+    assert_eq!(price_field(ASK_PX, 103.0)[0], 0x21);
+    // The standard message already ends with its one feed_status = FEED_OK
+    assert!(encode(100.0, 102.0, FeedStatus::FeedOk).ends_with(&[0x50, 0x01]));
+}
+
+#[test]
+fn later_halted_status_overrides_ok() {
+    let standard = encode(100.0, 102.0, FeedStatus::FeedOk);
+    assert_eq!(decide_bytes(&standard), QUOTE_BOTH);
+
+    let duplicated = with_field(&standard, status_field(FeedStatus::FeedHalted));
+    assert_eq!(decide_bytes(&duplicated), CANCEL_ALL);
+}
+
+#[test]
+fn later_ok_status_overrides_halted() {
+    // Last one wins in both directions: an earlier HALTED is not sticky.
+    // Pinned so that changing it (e.g. "any HALTED cancels") is deliberate.
+    let standard = encode(100.0, 102.0, FeedStatus::FeedHalted);
+    assert_eq!(decide_bytes(&standard), CANCEL_ALL);
+
+    let duplicated = with_field(&standard, status_field(FeedStatus::FeedOk));
+    assert_eq!(decide_bytes(&duplicated), QUOTE_BOTH);
+}
+
+#[test]
+fn later_bid_that_crosses_the_book_cancels() {
+    let standard = encode(100.0, 102.0, FeedStatus::FeedOk);
+    assert_eq!(decide_bytes(&standard), QUOTE_BOTH);
+
+    let duplicated = with_field(&standard, price_field(BID_PX, 103.0));
+    assert_eq!(decide_bytes(&duplicated), CANCEL_ALL);
+}
+
+#[test]
+fn later_ask_that_narrows_the_spread_holds() {
+    // Default threshold 7e-7: a spread of 1e-6 quotes, 5e-7 holds
+    let standard = encode(1.0, 1.0 + 1e-6, FeedStatus::FeedOk);
+    assert_eq!(decide_bytes(&standard), QUOTE_BOTH);
+
+    let duplicated = with_field(&standard, price_field(ASK_PX, 1.0 + 5e-7));
+    assert_eq!(decide_bytes(&duplicated), HOLD);
+}
+
+#[test]
+fn later_non_finite_price_cancels() {
+    let standard = encode(100.0, 102.0, FeedStatus::FeedOk);
+    assert_eq!(decide_bytes(&standard), QUOTE_BOTH);
+
+    for bad in [f64::NAN, f64::INFINITY, -1.0] {
+        let duplicated = with_field(&standard, price_field(ASK_PX, bad));
+        assert_eq!(decide_bytes(&duplicated), CANCEL_ALL, "ask={bad}");
+    }
+}
+
+#[test]
+fn concatenated_messages_merge() {
+    // Two whole messages in one buffer. proto3 leaves default values off the
+    // wire, so the halt message (status only, no prices) overrides just the
+    // status and keeps the first message's prices.
+    let book = encode(100.0, 102.0, FeedStatus::FeedOk);
+    let halt = TopOfBook {
+        symbol: "BTCUSDT".into(),
+        feed_status: FeedStatus::FeedHalted as i32,
+        ..Default::default()
+    }
+    .encode_to_vec();
+    assert_eq!(decide_bytes(&book), QUOTE_BOTH);
+    assert_eq!(decide_bytes(&halt), CANCEL_ALL);
+
+    assert_eq!(decide_bytes(&[&book[..], &halt[..]].concat()), CANCEL_ALL);
+    assert_eq!(decide_bytes(&[&halt[..], &book[..]].concat()), QUOTE_BOTH);
+}
+
+// What a concatenation should decode to: each decision field takes the second
+// message's value if that value is on the wire. prost writes a proto3 double
+// only when it is != 0.0 (so -0.0 is left off too) and an enum only when != 0.
+// The other fields do not affect the decision (tested in lib.rs), so they are
+// taken from the first message.
+fn expected_merge(first: &TopOfBook, second: &TopOfBook) -> TopOfBook {
+    let price = |a: f64, b: f64| if b != 0.0 { b } else { a };
+    TopOfBook {
+        bid_px: price(first.bid_px, second.bid_px),
+        ask_px: price(first.ask_px, second.ask_px),
+        feed_status: if second.feed_status != 0 {
+            second.feed_status
+        } else {
+            first.feed_status
+        },
+        ..first.clone()
+    }
+}
+
+proptest! {
+    #![proptest_config(config())]
+
+    #[test]
+    fn concatenated_random_messages_decide_like_their_merge(a in message(), b in message()) {
+        let first = TopOfBook::decode(&a[..]).unwrap();
+        let second = TopOfBook::decode(&b[..]).unwrap();
+        prop_assert_eq!(
+            decide_bytes(&[&a[..], &b[..]].concat()),
+            decide_bytes(&expected_merge(&first, &second).encode_to_vec())
+        );
     }
 }
 
