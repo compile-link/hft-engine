@@ -325,7 +325,7 @@ requests opened before it existed.
 
 **Ingest checks.** Every tick passes `TobValidator` (symbol, finite/positive prices and quantities, no crossed or locked book) and then `SequenceTracker`. Update IDs must increase within a source session; duplicates, backwards IDs and missing IDs are dropped. Each (re)connect or replay loop starts a new `session`, which resets the baseline. Rejections are counted per reason and summarized at shutdown.
 
-**Feed status to the strategy.** Each `TopOfBook` carries `feed_status`: `FEED_OK`, `FEED_SESSION_START` (first tick after a (re)connect) or `FEED_HALTED` (sent once when the watchdog stops the feed). The strategy returns `CANCEL_ALL` for any status other than OK/SESSION_START, and for undecodable messages and non-finite, crossed or locked books.
+**Feed status to the strategy.** Each `TopOfBook` carries `feed_status`: `FEED_OK`, `FEED_SESSION_START` (first tick after a (re)connect) or `FEED_HALTED` (sent once when the watchdog stops the feed). The strategy returns `CANCEL_ALL` for any status other than OK/SESSION_START, and for undecodable or empty messages and non-finite, crossed or locked books.
 
 Default thresholds if not specified: live `0.0000007`, replay `1.0`.
 
