@@ -84,9 +84,12 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: scripts/audit.sh
 
-      # Coverage of production code: an instrumented run of the same suite.
-      # Report-only: shown in the job summary and as a browsable artifact;
-      # nothing fails on the percentage. Version pinned inside the script.
+      # Coverage of production code: an instrumented run of the same suite,
+      # shown in the job summary and as a browsable artifact. The gate demands
+      # 100% of regions, functions and lines: the crate is ~30 lines of
+      # trading-safety logic, so every line earns a test. Lower it deliberately
+      # if that stops holding. The gate runs last so a failing pull request
+      # still gets the report that shows what is uncovered.
       - name: Coverage
         working-directory: ${{ github.workspace }}
         run: |
@@ -99,6 +102,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           scripts/coverage.sh report --html
+          scripts/coverage.sh report --fail-under-lines 100 --fail-under-functions 100 --fail-under-regions 100 >/dev/null
 
       - name: Upload coverage report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

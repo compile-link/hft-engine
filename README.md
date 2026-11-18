@@ -148,7 +148,8 @@ any seed file a failure leaves (see `strategy_engine/proptest-regressions/`).
 Coverage of the Rust production code: `scripts/coverage.sh` for a summary,
 `scripts/coverage.sh --html --open` for a line-by-line report. The script
 fetches a pinned `cargo-llvm-cov` and installs the `llvm-tools` rustup
-component on first use.
+component on first use. CI requires 100% coverage of the crate's production
+code (a deliberate bar: it is ~30 lines of trading-safety logic).
 
 Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links only the Protobuf library and the code under test, not the Rust module or libcurl.
 
@@ -178,7 +179,7 @@ library during generated-message destruction.
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile, `scripts/check-ci-gate.sh` on the merge gate |
-| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit`, coverage (report-only: job summary plus an HTML artifact) |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit`, coverage (job summary plus an HTML artifact; fails under 100% of the production code) |
 | `tidy` | `clang-tidy` on every source file, one process per file in parallel (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
