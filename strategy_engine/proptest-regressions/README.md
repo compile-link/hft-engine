@@ -5,7 +5,7 @@ line to a seed file:
 
 | Failing test in     | Seed file                             |
 |---------------------|---------------------------------------|
-| `src/lib.rs`        | `proptest-regressions/lib.txt` (here) |
+| `src/tests.rs`      | `proptest-regressions/tests.txt` (here) |
 | `tests/ffi_decide.rs` | `tests/ffi_decide.proptest-regressions` |
 
 (`tests/ffi_threshold.rs` keeps no seeds: its runner sets
