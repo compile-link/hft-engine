@@ -84,6 +84,29 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: scripts/audit.sh
 
+      # Coverage of production code: an instrumented run of the same suite.
+      # Report-only: shown in the job summary and as a browsable artifact;
+      # nothing fails on the percentage. Version pinned inside the script.
+      - name: Coverage
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          scripts/coverage.sh --no-report
+          {
+            echo '### Rust coverage (strategy_engine, production code)'
+            echo '```'
+            scripts/coverage.sh report --summary-only | sed "s#${PWD}/strategy_engine/##"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          scripts/coverage.sh report --html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-html
+          path: strategy_engine/target/llvm-cov/html
+          retention-days: 14
+
   tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04
