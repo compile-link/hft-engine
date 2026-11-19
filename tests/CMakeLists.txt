@@ -9,6 +9,7 @@ add_executable(hft_tests
   book_ticker_parse_test.cpp
   replay_source_test.cpp
   pipeline_test.cpp
+  rust_strategy_test.cpp
   ${CMAKE_SOURCE_DIR}/src/book_ticker_parse.cpp
   ${CMAKE_SOURCE_DIR}/src/sequence_tracker.cpp
   ${CMAKE_SOURCE_DIR}/src/feed_health.cpp

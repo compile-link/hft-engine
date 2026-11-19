@@ -115,7 +115,8 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
     std::thread process([&] {
         std::string payload;
         hft::TopOfBook tob;
-        const RustStrategy strategy;
+        RustStrategy rust_strategy;
+        Strategy& strategy = rust_strategy; // called through the interface
         while (true) {
             if (!q.pop(tob)) {
                 if (done.load()) {
