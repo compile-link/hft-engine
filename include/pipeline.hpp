@@ -4,6 +4,7 @@
 #include "market_data.pb.h"
 #include "market_data_source.hpp"
 #include "sequence_tracker.hpp"
+#include "strategy.hpp"
 #include "tob_validator.hpp"
 #include <cstdint>
 #include <optional>
@@ -73,15 +74,18 @@ struct PipelineStats {
 };
 
 // One implementation of ingest -> checks -> ring -> serialize -> decide -> signal.
-// Modes differ only in what is plugged in (source, config, observer), never in the path itself.
+// Modes differ only in what is plugged in (source, strategy, config, observer), never in the path itself.
 class Pipeline final {
   public:
-    explicit Pipeline(PipelineConfig cfg, PipelineObserver* observer = nullptr);
+    // strategy is borrowed, not owned: it must outlive run(), and run() calls it from the
+    // process thread only. Not for concurrent runs: one strategy instance per running pipeline.
+    Pipeline(PipelineConfig cfg, Strategy& strategy, PipelineObserver* observer = nullptr);
 
     // Blocks until the source ends or is stopped (request_stop() or the watchdog)
     PipelineStats run(MarketDataSource& src);
 
   private:
     PipelineConfig cfg_;
+    Strategy& strategy_;
     PipelineObserver* observer_;
 };

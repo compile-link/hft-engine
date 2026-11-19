@@ -1,7 +1,6 @@
 #include "pipeline.hpp"
 #include "market_data.pb.h"
 #include "sequence_tracker.hpp"
-#include "spread_strategy.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
 #include "tob_validator.hpp"
@@ -10,7 +9,8 @@
 #include <stdexcept>
 #include <thread>
 
-Pipeline::Pipeline(PipelineConfig cfg, PipelineObserver* observer) : cfg_(std::move(cfg)), observer_(observer) {
+Pipeline::Pipeline(PipelineConfig cfg, Strategy& strategy, PipelineObserver* observer)
+    : cfg_(std::move(cfg)), strategy_(strategy), observer_(observer) {
     if (cfg_.watchdog && !cfg_.health) {
         throw std::invalid_argument("pipeline watchdog requires the health monitor");
     }
@@ -115,8 +115,6 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
     std::thread process([&] {
         std::string payload;
         hft::TopOfBook tob;
-        SpreadStrategy spread_strategy;
-        Strategy& strategy = spread_strategy; // called through the interface
         while (true) {
             if (!q.pop(tob)) {
                 if (done.load()) {
@@ -134,7 +132,7 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             MessageSpans spans;
             spans.recv_ts_ns = tob.recv_ts_ns();
             spans.t0_ns = time_utils::now_ns();
-            const hft::QuoteAction action = strategy.decide(payload);
+            const hft::QuoteAction action = strategy_.decide(payload);
             spans.strat_end_ns = time_utils::now_ns();
 
             hft::StrategySignal sig;

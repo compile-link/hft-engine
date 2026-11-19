@@ -7,6 +7,7 @@
 #include "replay_source.hpp"
 #include "runtime/curl_global_guard.hpp"
 #include "source_factory.hpp"
+#include "spread_strategy.hpp"
 #include <chrono>
 #include <iostream>
 #include <optional>
@@ -119,8 +120,10 @@ int main(int argc, char* argv[]) {
             throw std::invalid_argument(oss.str());
         }
 
+        SpreadStrategy strategy; // the only strategy for now; selection comes later
+
         if (bench) {
-            const BenchmarkResult r = Benchmark::run(*mds, [&] {
+            const BenchmarkResult r = Benchmark::run(*mds, strategy, [&] {
                 PipelineConfig c = PipelineConfig::checks(bench_live_checks);
                 c.health_cfg = healthConfig;
                 if (bench_live_checks) {
@@ -135,7 +138,7 @@ int main(int argc, char* argv[]) {
             cfg.health_cfg = healthConfig;
             LogObserver observer;
 
-            const PipelineStats stats = Pipeline(cfg, &observer).run(*mds);
+            const PipelineStats stats = Pipeline(cfg, strategy, &observer).run(*mds);
 
             std::ostringstream oss;
             oss << "drops=" << stats.drops

@@ -99,7 +99,7 @@ void BenchmarkResult::print() const {
     log_utils::log_to_stream(std::cout, lat.str());
 }
 
-BenchmarkResult Benchmark::run(MarketDataSource& src, const PipelineConfig& cfg) {
+BenchmarkResult Benchmark::run(MarketDataSource& src, Strategy& strategy, const PipelineConfig& cfg) {
     using std::chrono::duration_cast;
     using std::chrono::nanoseconds;
     const uint64_t start_ns = time_utils::now_ns();
@@ -107,7 +107,7 @@ BenchmarkResult Benchmark::run(MarketDataSource& src, const PipelineConfig& cfg)
     const uint64_t window_end_ns = window_start_ns + static_cast<uint64_t>(duration_cast<nanoseconds>(measure_seconds).count());
 
     SamplingObserver observer(window_start_ns, window_end_ns);
-    Pipeline pipeline(cfg, &observer);
+    Pipeline pipeline(cfg, strategy, &observer);
 
     // Stops the source once the window has closed; wakes early if the pipeline ends first
     std::mutex m;
