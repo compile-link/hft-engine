@@ -134,14 +134,14 @@ Each event is always called from the same thread. An observer whose state is spl
 
 Fixed capacity (1024 slots), `std::atomic` head and tail. `push` checks `next == tail` before writing; `pop` checks `tail == head` before reading. Both return `false` on full/empty rather than blocking. Only the ingest thread writes `head_` and only the process thread writes `tail_`.
 
-### Strategy (Rust, `rust_decide`)
+### Strategy (spread strategy, Rust `rust_decide`)
 
 Receives the serialized `TopOfBook` bytes, decodes them with `prost`, and returns one of:
 - `QuoteBoth`: spread >= threshold
 - `Hold`: spread < threshold
 - `CancelAll`: an invalid book (non-positive prices, ask < bid, non-finite values), a feed status other than OK or session start, or input it cannot use (undecodable bytes, a null pointer or zero length)
 
-The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout. The pipeline calls it through the `Strategy` interface (`include/strategy.hpp`: one `decide(payload)` per message, process thread only). `RustStrategy` (`include/rust_strategy.hpp`) implements it as a header-only wrapper that holds the `extern "C"` declaration and the pointer cast. The pipeline still constructs `RustStrategy` itself; it is not yet injectable.
+The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout. The pipeline calls it through the `Strategy` interface (`include/strategy.hpp`: one `decide(payload)` per message, process thread only). `SpreadStrategy` (`include/spread_strategy.hpp`) implements it as a header-only wrapper that holds the `extern "C"` declaration and the pointer cast. The pipeline still constructs `SpreadStrategy` itself; it is not yet injectable.
 
 ### `PipelineStats`
 

@@ -1,7 +1,7 @@
 #include "pipeline.hpp"
 #include "market_data.pb.h"
-#include "rust_strategy.hpp"
 #include "sequence_tracker.hpp"
+#include "spread_strategy.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
 #include "tob_validator.hpp"
@@ -115,8 +115,8 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
     std::thread process([&] {
         std::string payload;
         hft::TopOfBook tob;
-        RustStrategy rust_strategy;
-        Strategy& strategy = rust_strategy; // called through the interface
+        SpreadStrategy spread_strategy;
+        Strategy& strategy = spread_strategy; // called through the interface
         while (true) {
             if (!q.pop(tob)) {
                 if (done.load()) {
