@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include "market_data.pb.h"
+#include "rust_strategy.hpp"
 #include "sequence_tracker.hpp"
 #include "time_utils.hpp"
 #include "tob_ring_buffer.hpp"
@@ -8,8 +9,6 @@
 #include <chrono>
 #include <stdexcept>
 #include <thread>
-
-extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
 
 Pipeline::Pipeline(PipelineConfig cfg, PipelineObserver* observer) : cfg_(std::move(cfg)), observer_(observer) {
     if (cfg_.watchdog && !cfg_.health) {
@@ -116,6 +115,7 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
     std::thread process([&] {
         std::string payload;
         hft::TopOfBook tob;
+        const RustStrategy strategy;
         while (true) {
             if (!q.pop(tob)) {
                 if (done.load()) {
@@ -133,13 +133,12 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             MessageSpans spans;
             spans.recv_ts_ns = tob.recv_ts_ns();
             spans.t0_ns = time_utils::now_ns();
-            int32_t action = rust_decide(
-                reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+            const hft::QuoteAction action = strategy.decide(payload);
             spans.strat_end_ns = time_utils::now_ns();
 
             hft::StrategySignal sig;
             sig.set_symbol(tob.symbol());
-            sig.set_action(static_cast<hft::QuoteAction>(action));
+            sig.set_action(action);
             sig.set_reason("spread_cond");
             sig.set_ts_ns(spans.strat_end_ns);  // decision time
             spans.t1_ns = time_utils::now_ns(); // e2e stop: signal complete

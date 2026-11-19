@@ -141,7 +141,7 @@ Receives the serialized `TopOfBook` bytes, decodes them with `prost`, and return
 - `Hold`: spread < threshold
 - `CancelAll`: an invalid book (non-positive prices, ask < bid, non-finite values), a feed status other than OK or session start, or input it cannot use (undecodable bytes, a null pointer or zero length)
 
-The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout.
+The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout. The pipeline calls it through `RustStrategy` (`include/rust_strategy.hpp`), a header-only wrapper that holds the `extern "C"` declaration and the pointer cast.
 
 ### `PipelineStats`
 
