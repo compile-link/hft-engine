@@ -139,7 +139,17 @@ ctest --preset debug
 scripts/dev.sh debug --test
 ```
 
-Rust strategy tests: `cd strategy_engine && cargo test`.
+Rust strategy tests: `cd strategy_engine && cargo test`. Unit tests of the
+decision logic are in `src/tests.rs`; tests of the C ABI entry points
+(`rust_decide`, `rust_set_threshold`) are in `tests/`. Property tests use
+proptest: raise `PROPTEST_CASES` (default 256) for a deeper search, and commit
+any seed file a failure leaves (see `strategy_engine/proptest-regressions/`).
+
+Coverage of the Rust production code: `scripts/coverage.sh` for a summary,
+`scripts/coverage.sh --html --open` for a line-by-line report. The script
+fetches a pinned `cargo-llvm-cov` and installs the `llvm-tools` rustup
+component on first use. CI requires 100% coverage of the crate's production
+code (a deliberate bar: it is ~30 lines of trading-safety logic).
 
 Unit tests live in `tests/` and use GoogleTest via CTest. The test binary links only the Protobuf library and the code under test, not the Rust module or libcurl.
 
@@ -169,7 +179,7 @@ library during generated-message destruction.
 | --- | --- |
 | `format` | `clang-format` (pinned version, via `scripts/format.sh --check`) |
 | `lint-infra` | `actionlint` on workflows, `shellcheck` on scripts and composite actions, `hadolint` on the Dockerfile, `scripts/check-ci-gate.sh` on the merge gate |
-| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit` |
+| `rust` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (against the vcpkg-pinned `protoc`), `cargo audit`, coverage (job summary plus an HTML artifact; fails under 100% of the production code) |
 | `tidy` | `clang-tidy` on every source file, one process per file in parallel (`scripts/tidy.sh`) |
 | `docker` | Builds the image end to end, smoke-tests the binary, scans it with Trivy |
 | `build-test` | Builds and runs CTest for the `debug` and `release` presets |
@@ -179,7 +189,8 @@ library during generated-message destruction.
 nightly, covering both the unit tests and a benchmark-mode pipeline run.
 Suppression files live in `.github/sanitizers/`. It also re-runs `cargo audit`
 and the Trivy image scan, because new advisories appear for code that has not
-changed.
+changed, and the Rust tests with `PROPTEST_CASES=16384` for a deeper random
+search than pull requests run.
 
 ### Caching
 
@@ -193,7 +204,7 @@ every pull request; one saved on a pull request only by that pull request.
 | vcpkg checkout | vcpkg baseline | any run, on a new baseline | none |
 | vcpkg binary archives | `vcpkg.json` | any run, on a change | previous `vcpkg.json` |
 | cargo, `release` (CMake builds, sanitizers) | toolchain + `Cargo.lock` | any run, on a change | none |
-| cargo, `lint` (clippy, `cargo test`) | toolchain + `Cargo.lock` | any run, on a change | none |
+| cargo, `lint` (clippy, `cargo test`, coverage) | toolchain + `Cargo.lock` | any run, on a change | none |
 | Trivy DB | UTC date | nightly on `main` only | previous day |
 
 A cache is saved only when its exact key missed, so a pull request that leaves
@@ -325,7 +336,7 @@ requests opened before it existed.
 
 **Ingest checks.** Every tick passes `TobValidator` (symbol, finite/positive prices and quantities, no crossed or locked book) and then `SequenceTracker`. Update IDs must increase within a source session; duplicates, backwards IDs and missing IDs are dropped. Each (re)connect or replay loop starts a new `session`, which resets the baseline. Rejections are counted per reason and summarized at shutdown.
 
-**Feed status to the strategy.** Each `TopOfBook` carries `feed_status`: `FEED_OK`, `FEED_SESSION_START` (first tick after a (re)connect) or `FEED_HALTED` (sent once when the watchdog stops the feed). The strategy returns `CANCEL_ALL` for any status other than OK/SESSION_START, and for undecodable messages and non-finite, crossed or locked books.
+**Feed status to the strategy.** Each `TopOfBook` carries `feed_status`: `FEED_OK`, `FEED_SESSION_START` (first tick after a (re)connect) or `FEED_HALTED` (sent once when the watchdog stops the feed). The strategy returns `CANCEL_ALL` for any status other than OK/SESSION_START, and for undecodable or empty messages and non-finite, crossed or locked books.
 
 Default thresholds if not specified: live `0.0000007`, replay `1.0`.
 

@@ -84,6 +84,33 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: scripts/audit.sh
 
+      # Coverage of production code: an instrumented run of the same suite,
+      # shown in the job summary and as a browsable artifact. The gate demands
+      # 100% of regions, functions and lines: the crate is ~30 lines of
+      # trading-safety logic, so every line earns a test. Lower it deliberately
+      # if that stops holding. The gate runs last so a failing pull request
+      # still gets the report that shows what is uncovered.
+      - name: Coverage
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          scripts/coverage.sh --no-report
+          {
+            echo '### Rust coverage (strategy_engine, production code)'
+            echo '```'
+            scripts/coverage.sh report --summary-only | sed "s#${PWD}/strategy_engine/##"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          scripts/coverage.sh report --html
+          scripts/coverage.sh report --fail-under-lines 100 --fail-under-functions 100 --fail-under-regions 100 >/dev/null
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-html
+          path: strategy_engine/target/llvm-cov/html
+          retention-days: 14
+
   tidy:
     name: clang-tidy
     runs-on: ubuntu-24.04

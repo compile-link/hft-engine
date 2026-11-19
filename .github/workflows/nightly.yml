@@ -71,6 +71,50 @@ jobs:
           path: ~/.cache/trivy
           key: trivy-db-${{ steps.date.outputs.day }}
 
+  # Same Rust suite as CI's rust job, searching much deeper: the property
+  # tests scale with PROPTEST_CASES (256 per proptest! block on PRs). A failure
+  # writes a seed file (see strategy_engine/proptest-regressions/README.md);
+  # the artifact below carries it out so it can be committed as a regression.
+  rust-prop:
+    name: Rust property tests (deep)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: strategy_engine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-build-env
+        with:
+          cargo-cache: lint
+
+      # prost-build shells out to protoc; use the vcpkg-pinned one, exactly as
+      # the CI rust job does.
+      - name: Install pinned protoc via vcpkg
+        working-directory: ${{ github.workspace }}
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --x-manifest-root="$GITHUB_WORKSPACE" \
+            --x-install-root="$RUNNER_TEMP/vcpkg_installed"
+          protoc="$RUNNER_TEMP/vcpkg_installed/x64-linux/tools/protobuf/protoc"
+          "$protoc" --version
+          echo "PROTOC=$protoc" >> "$GITHUB_ENV"
+
+      - name: Run tests with a deep random search
+        env:
+          PROPTEST_CASES: "16384"
+        run: cargo test --locked
+
+      - name: Upload new regression seeds on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proptest-regression-seeds
+          path: |
+            strategy_engine/proptest-regressions/
+            strategy_engine/tests/*.proptest-regressions
+          if-no-files-found: ignore
+
   sanitize:
     name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04

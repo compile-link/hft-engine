@@ -14,7 +14,8 @@
 #include <stdexcept>
 #include <string>
 
-extern "C" void rust_set_threshold(double thres);
+// false: the value was rejected (not finite and positive) or a threshold was already set
+extern "C" bool rust_set_threshold(double thres);
 
 int main(int argc, char* argv[]) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -111,8 +112,11 @@ int main(int argc, char* argv[]) {
             throw std::invalid_argument("Invalid source");
         }
 
-        if (threshold) {
-            rust_set_threshold(*threshold);
+        // Set once per process, so a false return here can only be an invalid value
+        if (threshold && !rust_set_threshold(*threshold)) {
+            std::ostringstream oss;
+            oss << "--threshold must be a positive, finite number, got " << *threshold;
+            throw std::invalid_argument(oss.str());
         }
 
         if (bench) {

@@ -7,11 +7,14 @@ pub mod pb {
 
 static THRESHOLD: OnceLock<f64> = OnceLock::new();
 
+/// Sets the spread threshold for the life of the process.
+///
+/// Returns `true` if `v` is now the threshold. Returns `false`, leaving the
+/// threshold unchanged, if `v` is not finite and positive or if a threshold
+/// was already set. `bool` has the same ABI as C/C++ `bool`.
 #[no_mangle]
-pub extern "C" fn rust_set_threshold(v: f64) {
-    if v.is_finite() && v > 0.0 {
-        let _ = THRESHOLD.set(v);
-    }
+pub extern "C" fn rust_set_threshold(v: f64) -> bool {
+    v.is_finite() && v > 0.0 && THRESHOLD.set(v).is_ok()
 }
 
 fn get_threshold() -> f64 {
@@ -24,11 +27,16 @@ fn get_threshold() -> f64 {
 ///
 /// If `top_ptr` is non-null, it must point to `top_len` initialized bytes that
 /// stay valid and unmodified for the duration of the call. A null pointer or a
-/// zero length is accepted and yields `Hold`.
+/// zero length is accepted and yields `CancelAll`, like any other message that
+/// carries no usable market state.
 #[no_mangle]
 pub unsafe extern "C" fn rust_decide(top_ptr: *const u8, top_len: usize) -> i32 {
+    // Fallback only: the engine always passes a populated buffer (std::string data
+    // is never null, and every message it sends sets feed_status, so it is never
+    // empty). Reaching this means a broken caller, so fail safe.
+    // The null check must stay ahead of from_raw_parts, which is UB for null even at len 0.
     if top_ptr.is_null() || top_len == 0 {
-        return pb::QuoteAction::Hold as i32;
+        return pb::QuoteAction::CancelAll as i32;
     }
 
     // SAFETY: non-null and non-zero length checked above; validity of the
@@ -69,99 +77,6 @@ fn decide(bytes: &[u8], threshold: f64) -> pb::QuoteAction {
     }
 }
 
+// Unit tests of the private decide(); FFI tests are in tests/
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn encode(bid: f64, ask: f64, status: pb::FeedStatus) -> Vec<u8> {
-        pb::TopOfBook {
-            symbol: "BTCUSDT".into(),
-            bid_px: bid,
-            ask_px: ask,
-            bid_qty: 1.0,
-            ask_qty: 1.0,
-            sequence: 1,
-            session: 1,
-            feed_status: status as i32,
-            ..Default::default()
-        }
-        .encode_to_vec()
-    }
-
-    #[test]
-    fn quotes_on_wide_spread_when_ok() {
-        assert_eq!(
-            decide(&encode(100.0, 102.0, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::QuoteBoth
-        );
-    }
-
-    #[test]
-    fn holds_on_narrow_spread() {
-        assert_eq!(
-            decide(&encode(100.0, 100.5, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::Hold
-        );
-    }
-
-    #[test]
-    fn session_start_uses_normal_decision() {
-        assert_eq!(
-            decide(&encode(100.0, 102.0, pb::FeedStatus::FeedSessionStart), 1.0),
-            pb::QuoteAction::QuoteBoth
-        );
-    }
-
-    #[test]
-    fn cancels_when_halted() {
-        assert_eq!(
-            decide(&encode(0.0, 0.0, pb::FeedStatus::FeedHalted), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-    }
-
-    #[test]
-    fn cancels_when_status_unspecified() {
-        assert_eq!(
-            decide(&encode(100.0, 102.0, pb::FeedStatus::Unspecified), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-    }
-
-    #[test]
-    fn cancels_on_unknown_status_value() {
-        let mut m =
-            pb::TopOfBook::decode(&encode(100.0, 102.0, pb::FeedStatus::FeedOk)[..]).unwrap();
-        m.feed_status = 99;
-        assert_eq!(decide(&m.encode_to_vec(), 1.0), pb::QuoteAction::CancelAll);
-    }
-
-    #[test]
-    fn cancels_on_nan_or_inf() {
-        assert_eq!(
-            decide(&encode(f64::NAN, 102.0, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-        assert_eq!(
-            decide(&encode(100.0, f64::INFINITY, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-    }
-
-    #[test]
-    fn cancels_on_crossed_or_locked() {
-        assert_eq!(
-            decide(&encode(101.0, 100.0, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-        assert_eq!(
-            decide(&encode(100.0, 100.0, pb::FeedStatus::FeedOk), 1.0),
-            pb::QuoteAction::CancelAll
-        );
-    }
-
-    #[test]
-    fn cancels_on_undecodable_bytes() {
-        assert_eq!(decide(&[0xff, 0xff, 0xff], 1.0), pb::QuoteAction::CancelAll);
-    }
-}
+mod tests;
