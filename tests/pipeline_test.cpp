@@ -1,9 +1,13 @@
 #include "pipeline.hpp"
 #include "replay_source.hpp"
+#include "spread_strategy.hpp"
+#include "strategy.hpp"
 #include "time_utils.hpp"
 #include <chrono>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -13,9 +17,11 @@ namespace {
         void on_message(const hft::StrategySignal& sig, const MessageSpans& s) override {
             spans.push_back(s);
             signals.push_back(sig.action());
+            reasons.push_back(sig.reason());
         }
         std::vector<MessageSpans> spans;
         std::vector<hft::QuoteAction> signals;
+        std::vector<std::string> reasons;
     };
 
     // One pass over the replay stub ticks, no pacing, then the source ends
@@ -33,12 +39,13 @@ TEST(Pipeline, DeliversEveryTickWithOrderedSpans) {
         SCOPED_TRACE(checks ? "checks on" : "checks off");
         ReplaySource src(single_pass());
         RecordingObserver obs;
+        SpreadStrategy strategy;
         PipelineConfig cfg = PipelineConfig::checks(checks);
         if (checks) {
             cfg.expected_symbol = ReplaySource::k_symbol;
         }
 
-        const PipelineStats stats = Pipeline(cfg, &obs).run(src);
+        const PipelineStats stats = Pipeline(cfg, strategy, &obs).run(src);
 
         EXPECT_EQ(stats.rejected, 0u);
         EXPECT_EQ(stats.drops, 0u);
@@ -56,7 +63,8 @@ TEST(Pipeline, DeliversEveryTickWithOrderedSpans) {
 TEST(Pipeline, RejectsWatchdogWithoutHealth) {
     PipelineConfig cfg = PipelineConfig::checks(false);
     cfg.watchdog = true;
-    EXPECT_THROW(Pipeline(cfg, nullptr), std::invalid_argument);
+    SpreadStrategy strategy;
+    EXPECT_THROW(Pipeline(cfg, strategy, nullptr), std::invalid_argument);
 }
 
 namespace {
@@ -91,12 +99,77 @@ TEST(Pipeline, WatchdogStopsUnhealthyFeedAndEmitsHaltTick) {
     cfg.expected_symbol = "BTCUSDT";
     cfg.health_cfg.startup_grace = std::chrono::milliseconds(200);
     cfg.health_cfg.max_no_valid = std::chrono::milliseconds(200);
+    SpreadStrategy strategy; // the real strategy: the halt tick must make it cancel
 
-    const PipelineStats stats = Pipeline(cfg, &obs).run(src);
+    const PipelineStats stats = Pipeline(cfg, strategy, &obs).run(src);
 
     EXPECT_EQ(stats.stop_reason, FeedStopReason::InvalidData);
     EXPECT_EQ(obs.stop_reason, FeedStopReason::InvalidData);
     EXPECT_GT(stats.rejected, 0u);
     ASSERT_EQ(obs.signals.size(), 1u); // only the halt tick is queued
     EXPECT_EQ(obs.signals.front(), hft::CANCEL_ALL);
+}
+
+namespace {
+    // Returns a fixed decision and records what the pipeline handed it (process thread only;
+    // read after run() returns, when the threads are joined)
+    class FakeStrategy final : public Strategy {
+      public:
+        explicit FakeStrategy(hft::QuoteAction action) : action_(action) {}
+        Decision decide(std::string_view payload) override {
+            hft::TopOfBook tob;
+            if (tob.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
+                received.push_back(tob);
+            } else {
+                ++undecodable;
+            }
+            return Decision{action_, "fake"};
+        }
+        std::vector<hft::TopOfBook> received;
+        int undecodable = 0;
+
+      private:
+        hft::QuoteAction action_;
+    };
+} // namespace
+
+// The pipeline emits whatever the injected strategy decides, action and reason, one signal per decision
+TEST(Pipeline, EmitsInjectedStrategyDecision) {
+    for (const hft::QuoteAction action : {hft::HOLD, hft::QUOTE_BOTH, hft::CANCEL_ALL}) {
+        SCOPED_TRACE(hft::QuoteAction_Name(action));
+        ReplaySource src(single_pass());
+        RecordingObserver obs;
+        FakeStrategy strategy(action);
+
+        Pipeline(PipelineConfig::checks(false), strategy, &obs).run(src);
+
+        ASSERT_FALSE(obs.signals.empty());
+        EXPECT_EQ(obs.signals.size(), strategy.received.size());
+        for (const hft::QuoteAction got : obs.signals) {
+            EXPECT_EQ(got, action);
+        }
+        for (const std::string& reason : obs.reasons) {
+            EXPECT_EQ(reason, "fake");
+        }
+    }
+}
+
+// The strategy receives every accepted tick as a decodable TopOfBook carrying a feed status
+TEST(Pipeline, StrategyReceivesSerializedTopOfBook) {
+    ReplaySource src(single_pass());
+    RecordingObserver obs;
+    FakeStrategy strategy(hft::HOLD);
+    PipelineConfig cfg = PipelineConfig::checks(true);
+    cfg.expected_symbol = ReplaySource::k_symbol;
+
+    const PipelineStats stats = Pipeline(cfg, strategy, &obs).run(src);
+
+    EXPECT_EQ(stats.rejected, 0u);
+    EXPECT_EQ(strategy.undecodable, 0);
+    ASSERT_FALSE(strategy.received.empty());
+    EXPECT_EQ(strategy.received.front().feed_status(), hft::FEED_SESSION_START);
+    for (const hft::TopOfBook& tob : strategy.received) {
+        EXPECT_EQ(tob.symbol(), ReplaySource::k_symbol);
+        EXPECT_TRUE(tob.feed_status() == hft::FEED_OK || tob.feed_status() == hft::FEED_SESSION_START);
+    }
 }

@@ -4,25 +4,25 @@ How market data moves through the engine, the components that make up the pipeli
 
 ## Overview
 
-Every mode (live, replay, benchmark) runs the same `Pipeline`. Modes differ only in the three things plugged into it:
+Every mode (live, replay, benchmark) runs the same `Pipeline`. Modes differ only in the four things plugged into it:
 
 ```
-        MarketDataSource          PipelineConfig            PipelineObserver
-        (where data comes from)   (which checks run)        (what is done with results)
-                 │                        │                          │
-                 └────────────────────────┼──────────────────────────┘
-                                          ▼
-                                 ┌──────────────────┐
-                                 │  Pipeline final  │  one implementation of the measured path
-                                 └──────────────────┘
+  MarketDataSource         Strategy              PipelineConfig        PipelineObserver
+  (where data comes from)  (what is decided)     (which checks run)    (what is done with results)
+           │                      │                      │                      │
+           └──────────────────────┴──────────┬───────────┴──────────────────────┘
+                                             ▼
+                                    ┌──────────────────┐
+                                    │  Pipeline final  │  one implementation of the measured path
+                                    └──────────────────┘
 ```
 
-| Mode | Source | Config | Observer |
-|---|---|---|---|
-| Live | `LiveWebSocketSource` | all checks on, expected symbol from `--symbol` | `LogObserver` |
-| Replay | `ReplaySource` (paced) | all checks on | `LogObserver` |
-| Benchmark, pipeline | `ReplaySource` (unpaced, looping) | all checks off | sampling observer |
-| Benchmark, live-like (`--bench-live-checks`) | `ReplaySource` (unpaced, looping) | all checks on, expected symbol `BTCUSDT` | sampling observer |
+| Mode | Source | Strategy | Config | Observer |
+|---|---|---|---|---|
+| Live | `LiveWebSocketSource` | `SpreadStrategy` | all checks on, expected symbol from `--symbol` | `LogObserver` |
+| Replay | `ReplaySource` (paced) | `SpreadStrategy` | all checks on | `LogObserver` |
+| Benchmark, pipeline | `ReplaySource` (unpaced, looping) | `SpreadStrategy` | all checks off | sampling observer |
+| Benchmark, live-like (`--bench-live-checks`) | `ReplaySource` (unpaced, looping) | `SpreadStrategy` | all checks on, expected symbol `BTCUSDT` | sampling observer |
 
 The rule behind this split: **the pipeline itself is never specialised.** It is `final`, and anything that varies between modes is a component passed in. A mode-specific copy of the pipeline, or a subclass overriding a stage, would let the benchmark measure code that live never runs.
 
@@ -67,11 +67,13 @@ Span definitions (start and stop points, and what each covers) are in the README
 ### `Pipeline` (`include/pipeline.hpp`)
 
 ```cpp
-Pipeline(PipelineConfig cfg, PipelineObserver* observer = nullptr);
+Pipeline(PipelineConfig cfg, Strategy& strategy, PipelineObserver* observer = nullptr);
 PipelineStats run(MarketDataSource& src);   // blocks until the source ends or is stopped
 ```
 
 Owns everything with per-run state: the ring buffer, `TobValidator`, `SequenceTracker`, `FeedHealthMonitor`, and the three threads. `run()` starts the threads, joins them, and returns `PipelineStats`.
+
+The strategy is borrowed, not owned: the caller keeps it alive for the whole of `run()`, and the pipeline calls it from the process thread only. `main` constructs the `SpreadStrategy` and passes it to `Pipeline` (normal runs) or `Benchmark::run` (benchmark); tests pass their own fakes.
 
 The constructor rejects a config with the watchdog on and health off, because the watchdog has nothing to evaluate without it.
 
@@ -134,14 +136,14 @@ Each event is always called from the same thread. An observer whose state is spl
 
 Fixed capacity (1024 slots), `std::atomic` head and tail. `push` checks `next == tail` before writing; `pop` checks `tail == head` before reading. Both return `false` on full/empty rather than blocking. Only the ingest thread writes `head_` and only the process thread writes `tail_`.
 
-### Strategy (Rust, `rust_decide`)
+### Strategy (spread strategy, Rust `rust_decide`)
 
 Receives the serialized `TopOfBook` bytes, decodes them with `prost`, and returns one of:
 - `QuoteBoth`: spread >= threshold
 - `Hold`: spread < threshold
 - `CancelAll`: an invalid book (non-positive prices, ask < bid, non-finite values), a feed status other than OK or session start, or input it cannot use (undecodable bytes, a null pointer or zero length)
 
-The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout.
+The threshold is set once from C++ via `rust_set_threshold` before the pipeline starts. It returns `false` for a value that is not finite and positive, or if a threshold is already set; `main` then exits with an error rather than running with the default. Data crosses the FFI boundary as Protobuf bytes, so neither side depends on the other's memory layout. The pipeline calls it through the `Strategy` interface (`include/strategy.hpp`: one `decide(payload)` per message returning a `Decision` of action and reason, process thread only). `SpreadStrategy` (`include/spread_strategy.hpp`) implements it; `src/spread_strategy.cpp` holds the `extern "C"` declaration and the pointer cast. The pipeline receives it as a `Strategy&` and doesn't know which implementation it has.
 
 ### `PipelineStats`
 

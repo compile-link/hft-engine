@@ -24,7 +24,7 @@ MarketDataSource -> [SPSC Ring Buffer] -> Strategy Engine -> StrategySignal -> O
                         (watchdog thread: feed health)
 ```
 
-Live, replay and benchmark runs all use one `Pipeline` implementation. A mode only chooses what it plugs in: a `MarketDataSource` (live WebSocket or replay), a `PipelineConfig` (which checks run), and a `PipelineObserver` (logging for normal runs, sampling for the benchmark). The measured path is identical in every mode.
+Live, replay and benchmark runs all use one `Pipeline` implementation. A mode only chooses what it plugs in: a `MarketDataSource` (live WebSocket or replay), a `Strategy` (currently always the spread strategy), a `PipelineConfig` (which checks run), and a `PipelineObserver` (logging for normal runs, sampling for the benchmark). The measured path is identical in every mode.
 
 See [docs/architecture.md](docs/architecture.md) for the dataflow, components, observer events, threads and shutdown.
 

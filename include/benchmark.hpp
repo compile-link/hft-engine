@@ -3,6 +3,7 @@
 #include "feed_health.hpp"
 #include "market_data_source.hpp"
 #include "pipeline.hpp"
+#include "strategy.hpp"
 #include <chrono>
 #include <cstdint>
 
@@ -26,7 +27,7 @@ struct BenchmarkResult {
 // Drives the shared Pipeline over a source and samples spans inside a fixed measurement window
 class Benchmark {
   public:
-    static BenchmarkResult run(MarketDataSource& src, const PipelineConfig& cfg);
+    static BenchmarkResult run(MarketDataSource& src, Strategy& strategy, const PipelineConfig& cfg);
 
   private:
     static constexpr std::chrono::seconds warmup_seconds{3};

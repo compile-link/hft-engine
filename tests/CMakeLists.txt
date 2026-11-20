@@ -9,12 +9,14 @@ add_executable(hft_tests
   book_ticker_parse_test.cpp
   replay_source_test.cpp
   pipeline_test.cpp
+  spread_strategy_test.cpp
   ${CMAKE_SOURCE_DIR}/src/book_ticker_parse.cpp
   ${CMAKE_SOURCE_DIR}/src/sequence_tracker.cpp
   ${CMAKE_SOURCE_DIR}/src/feed_health.cpp
   ${CMAKE_SOURCE_DIR}/src/tob_validator.cpp
   ${CMAKE_SOURCE_DIR}/src/replay_source.cpp
   ${CMAKE_SOURCE_DIR}/src/pipeline.cpp
+  ${CMAKE_SOURCE_DIR}/src/spread_strategy.cpp
   ${CMAKE_SOURCE_DIR}/src/tob_ring_buffer.cpp
 )
 target_include_directories(hft_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)

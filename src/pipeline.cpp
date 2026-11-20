@@ -9,9 +9,8 @@
 #include <stdexcept>
 #include <thread>
 
-extern "C" int32_t rust_decide(const uint8_t* ptr, size_t len);
-
-Pipeline::Pipeline(PipelineConfig cfg, PipelineObserver* observer) : cfg_(std::move(cfg)), observer_(observer) {
+Pipeline::Pipeline(PipelineConfig cfg, Strategy& strategy, PipelineObserver* observer)
+    : cfg_(std::move(cfg)), strategy_(strategy), observer_(observer) {
     if (cfg_.watchdog && !cfg_.health) {
         throw std::invalid_argument("pipeline watchdog requires the health monitor");
     }
@@ -133,14 +132,13 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             MessageSpans spans;
             spans.recv_ts_ns = tob.recv_ts_ns();
             spans.t0_ns = time_utils::now_ns();
-            int32_t action = rust_decide(
-                reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+            const Decision decision = strategy_.decide(payload);
             spans.strat_end_ns = time_utils::now_ns();
 
             hft::StrategySignal sig;
             sig.set_symbol(tob.symbol());
-            sig.set_action(static_cast<hft::QuoteAction>(action));
-            sig.set_reason("spread_cond");
+            sig.set_action(decision.action);
+            sig.set_reason(decision.reason.data(), decision.reason.size());
             sig.set_ts_ns(spans.strat_end_ns);  // decision time
             spans.t1_ns = time_utils::now_ns(); // e2e stop: signal complete
 
