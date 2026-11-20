@@ -132,13 +132,13 @@ PipelineStats Pipeline::run(MarketDataSource& src) {
             MessageSpans spans;
             spans.recv_ts_ns = tob.recv_ts_ns();
             spans.t0_ns = time_utils::now_ns();
-            const hft::QuoteAction action = strategy_.decide(payload);
+            const Decision decision = strategy_.decide(payload);
             spans.strat_end_ns = time_utils::now_ns();
 
             hft::StrategySignal sig;
             sig.set_symbol(tob.symbol());
-            sig.set_action(action);
-            sig.set_reason("spread_cond");
+            sig.set_action(decision.action);
+            sig.set_reason(decision.reason.data(), decision.reason.size());
             sig.set_ts_ns(spans.strat_end_ns);  // decision time
             spans.t1_ns = time_utils::now_ns(); // e2e stop: signal complete
 

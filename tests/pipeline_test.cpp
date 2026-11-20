@@ -6,6 +6,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -16,9 +17,11 @@ namespace {
         void on_message(const hft::StrategySignal& sig, const MessageSpans& s) override {
             spans.push_back(s);
             signals.push_back(sig.action());
+            reasons.push_back(sig.reason());
         }
         std::vector<MessageSpans> spans;
         std::vector<hft::QuoteAction> signals;
+        std::vector<std::string> reasons;
     };
 
     // One pass over the replay stub ticks, no pacing, then the source ends
@@ -108,19 +111,19 @@ TEST(Pipeline, WatchdogStopsUnhealthyFeedAndEmitsHaltTick) {
 }
 
 namespace {
-    // Returns a fixed action and records what the pipeline handed it (process thread only;
+    // Returns a fixed decision and records what the pipeline handed it (process thread only;
     // read after run() returns, when the threads are joined)
     class FakeStrategy final : public Strategy {
       public:
         explicit FakeStrategy(hft::QuoteAction action) : action_(action) {}
-        hft::QuoteAction decide(std::string_view payload) override {
+        Decision decide(std::string_view payload) override {
             hft::TopOfBook tob;
             if (tob.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
                 received.push_back(tob);
             } else {
                 ++undecodable;
             }
-            return action_;
+            return Decision{action_, "fake"};
         }
         std::vector<hft::TopOfBook> received;
         int undecodable = 0;
@@ -130,7 +133,7 @@ namespace {
     };
 } // namespace
 
-// The pipeline emits whatever the injected strategy decides, one signal per decision
+// The pipeline emits whatever the injected strategy decides, action and reason, one signal per decision
 TEST(Pipeline, EmitsInjectedStrategyDecision) {
     for (const hft::QuoteAction action : {hft::HOLD, hft::QUOTE_BOTH, hft::CANCEL_ALL}) {
         SCOPED_TRACE(hft::QuoteAction_Name(action));
@@ -144,6 +147,9 @@ TEST(Pipeline, EmitsInjectedStrategyDecision) {
         EXPECT_EQ(obs.signals.size(), strategy.received.size());
         for (const hft::QuoteAction got : obs.signals) {
             EXPECT_EQ(got, action);
+        }
+        for (const std::string& reason : obs.reasons) {
+            EXPECT_EQ(reason, "fake");
         }
     }
 }

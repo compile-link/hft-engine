@@ -9,5 +9,5 @@
 // linked) behind the Strategy interface; the FFI call lives in spread_strategy.cpp.
 class SpreadStrategy final : public Strategy {
   public:
-    hft::QuoteAction decide(std::string_view payload) override;
+    Decision decide(std::string_view payload) override;
 };
